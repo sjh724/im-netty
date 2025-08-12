@@ -17,8 +17,8 @@ public class ProtocolMessage implements Serializable {
     // 协议版本
     private byte version = 1;
 
-    // 消息类型（对应MessageType枚举的ordinal()）
-    private byte type;
+    // 消息类型
+    private int type;
 
     // 数据内容（JSON格式的IMMessage）
     private String data;
@@ -28,8 +28,8 @@ public class ProtocolMessage implements Serializable {
 
     public ProtocolMessage() {}
 
-    public ProtocolMessage(MessageType type, String data) {
-        this.type = (byte) type.ordinal();
+    public ProtocolMessage(int code, String data) {
+        this.type = code;
         this.data = data;
         this.dataLength = data.getBytes().length;
     }

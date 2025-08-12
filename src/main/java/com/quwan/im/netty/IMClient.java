@@ -1,65 +1,70 @@
 package com.quwan.im.netty;
 
 
+import com.quwan.im.protocol.MessageDecoder;
+import com.quwan.im.protocol.MessageEncoder;
 import com.quwan.im.model.IMMessage;
 import com.quwan.im.model.MessageType;
 import com.quwan.im.model.ProtocolMessage;
-import com.quwan.im.protocol.MessageDecoder;
-import com.quwan.im.protocol.MessageEncoder;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
+import io.netty.handler.codec.LengthFieldPrepender;
+import io.netty.handler.codec.string.StringDecoder;
+import io.netty.handler.codec.string.StringEncoder;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
+import io.netty.util.CharsetUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
 import java.util.UUID;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
 
 /**
- * IM客户端主类
- * 负责与服务器建立连接、发送消息、处理重连和心跳
+ * IM客户端测试类
+ * 完全适配服务器端IMChannelInitializer配置，包含心跳检测和自动重连机制
  */
+
 public class IMClient {
     private static final Logger logger = LoggerFactory.getLogger(IMClient.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
     // 服务器配置
-    private final String serverHost;
-    private final int serverPort;
-
-    // 用户信息
+    private final String host;
+    private final int port;
     private final String username;
     private final String password;
-    private String userId; // 登录后由服务器分配
 
-    // 连接状态
+    // 客户端状态
     private Channel channel;
-    private NioEventLoopGroup workerGroup;
+    private EventLoopGroup group;
     private boolean isConnected = false;
     private boolean isLoginSuccess = false;
     private boolean isShutdown = false;
+    private String userId;
 
     // 重连配置
-    private final ReconnectConfig    reconnectConfig = new ReconnectConfig();
-    private       ScheduledFuture<?> reconnectFuture;
+    private int reconnectDelay = 1; // 初始重连延迟（秒）
+    private static final int MAX_RECONNECT_DELAY = 60; // 最大重连延迟
+    private ScheduledFuture<?> reconnectFuture;
 
-    public IMClient(String serverHost, int serverPort, String username, String password) {
-        this.serverHost = serverHost;
-        this.serverPort = serverPort;
+    public IMClient(String host, int port, String username, String password) {
+        this.host = host;
+        this.port = port;
         this.username = username;
         this.password = password;
     }
@@ -68,10 +73,10 @@ public class IMClient {
      * 启动客户端
      */
     public void start() {
-        logger.info("启动IM客户端...");
+        logger.info("启动IM客户端，连接到 {}:{}", host, port);
         this.isShutdown = false;
         connect();
-        startConsoleInput(); // 启动控制台输入
+        startConsoleInput(); // 启动控制台输入测试
     }
 
     /**
@@ -94,8 +99,8 @@ public class IMClient {
         }
 
         // 释放事件循环组
-        if (workerGroup != null) {
-            workerGroup.shutdownGracefully();
+        if (group != null) {
+            group.shutdownGracefully();
         }
 
         scheduler.shutdown();
@@ -106,11 +111,10 @@ public class IMClient {
      * 建立与服务器的连接
      */
     private void connect() {
-        workerGroup = new NioEventLoopGroup();
-
+        group = new NioEventLoopGroup();
         try {
             Bootstrap bootstrap = new Bootstrap();
-            bootstrap.group(workerGroup)
+            bootstrap.group(group)
                     .channel(NioSocketChannel.class)
                     .option(ChannelOption.TCP_NODELAY, true)
                     .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000)
@@ -119,37 +123,52 @@ public class IMClient {
                         protected void initChannel(SocketChannel ch) {
                             ChannelPipeline pipeline = ch.pipeline();
 
-                            // 空闲检测：15秒未发送消息则发送心跳
-                            pipeline.addLast(new IdleStateHandler(0, 15, 0, TimeUnit.SECONDS));
+                            // 1. 粘包拆包处理器（与服务器端完全一致）
+                            pipeline.addLast("frameDecoder", new LengthFieldBasedFrameDecoder(
+                                    10 * 1024 * 1024, // 最大帧长度
+                                    0, // 长度字段偏移量
+                                    4, // 长度字段占用字节数
+                                    0, // 长度调整值
+                                    4  // 跳过的初始字节数
+                            ));
+                            pipeline.addLast("frameEncoder", new LengthFieldPrepender(4));
 
-                            // 编解码器（必须与服务器端一致）
-                            pipeline.addLast(new MessageDecoder());
-                            pipeline.addLast(new MessageEncoder());
+                            // 2. 字符串编解码器（与服务器端一致）
+                            pipeline.addLast("stringDecoder", new StringDecoder(CharsetUtil.UTF_8));
+                            pipeline.addLast("stringEncoder", new StringEncoder(CharsetUtil.UTF_8));
 
-                            // 客户端消息处理器
-                            pipeline.addLast(new ClientMessageHandler());
+                            // 3. 自定义消息编解码器
+                            pipeline.addLast("messageDecoder", new MessageDecoder());
+                            pipeline.addLast("messageEncoder", new MessageEncoder());
+
+                            // 4. 心跳检测（客户端20秒未发送消息则发送心跳，小于服务器30秒超时）
+                            pipeline.addLast("idleStateHandler", new IdleStateHandler(
+                                    0, 20, 0, TimeUnit.SECONDS
+                            ));
+
+                            // 5. 客户端消息处理器
+                            pipeline.addLast("clientHandler", new ClientMessageHandler());
                         }
                     });
 
-            logger.info("尝试连接服务器: {}:{}", serverHost, serverPort);
-            ChannelFuture future = bootstrap.connect(serverHost, serverPort).sync();
-
-            // 连接成功
+            // 发起连接
+            logger.info("尝试连接服务器...");
+            ChannelFuture future = bootstrap.connect(host, port).sync();
             channel = future.channel();
             isConnected = true;
-            logger.info("已连接到服务器: {}", channel.remoteAddress());
+            logger.info("已建立连接: {}", channel.remoteAddress());
+
+            // 连接关闭监听
+            channel.closeFuture().addListener((ChannelFutureListener) f -> {
+                logger.warn("连接已关闭");
+                handleDisconnect();
+            });
 
             // 发送登录请求
             sendLoginRequest();
 
-            // 监听连接关闭
-            channel.closeFuture().addListener((ChannelFutureListener) f -> {
-                logger.warn("与服务器的连接已关闭");
-                handleDisconnect();
-            });
-
         } catch (Exception e) {
-            logger.error("连接服务器失败", e);
+            logger.error("连接失败", e);
             handleConnectFailure();
         }
     }
@@ -162,7 +181,7 @@ public class IMClient {
         isLoginSuccess = false;
 
         if (!isShutdown) {
-            scheduleReconnect(); // 非主动关闭则重连
+            scheduleReconnect();
         }
     }
 
@@ -174,17 +193,17 @@ public class IMClient {
         isLoginSuccess = false;
 
         // 释放资源
-        if (workerGroup != null) {
-            workerGroup.shutdownGracefully();
+        if (group != null) {
+            group.shutdownGracefully();
         }
 
         if (!isShutdown) {
-            scheduleReconnect(); // 非主动关闭则重连
+            scheduleReconnect();
         }
     }
 
     /**
-     * 安排重连任务
+     * 安排重连任务（指数退避策略）
      */
     private void scheduleReconnect() {
         if (isShutdown) return;
@@ -194,12 +213,13 @@ public class IMClient {
             reconnectFuture.cancel(true);
         }
 
-        // 计算重连延迟（指数退避）
-        long delay = reconnectConfig.getNextDelay();
-        logger.info("{}秒后尝试重连...", delay);
+        // 计算下次重连延迟
+        int delay = reconnectDelay;
+        reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
 
+        logger.info("{}秒后尝试重连...", delay);
         reconnectFuture = scheduler.schedule(() -> {
-            logger.info("开始重连服务器...");
+            logger.info("开始重连...");
             connect();
         }, delay, TimeUnit.SECONDS);
     }
@@ -208,20 +228,25 @@ public class IMClient {
      * 发送登录请求
      */
     private void sendLoginRequest() {
+        if (!isConnected) {
+            logger.error("未建立连接，无法发送登录请求");
+            return;
+        }
+
         try {
             Map<String, String> loginData = new HashMap<>();
             loginData.put("username", username);
             loginData.put("password", password);
 
-            ProtocolMessage message = new ProtocolMessage(
-                    MessageType.LOGIN,
+            ProtocolMessage loginMsg = new ProtocolMessage(
+                    MessageType.LOGIN.getCode(),
                     objectMapper.writeValueAsString(loginData)
             );
 
-            channel.writeAndFlush(message).addListener((ChannelFutureListener) f -> {
+            channel.writeAndFlush(loginMsg).addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
                     logger.error("发送登录请求失败", f.cause());
-                    channel.close(); // 发送失败则关闭连接，触发重连
+                    channel.close(); // 发送失败关闭连接，触发重连
                 }
             });
         } catch (Exception e) {
@@ -246,12 +271,12 @@ public class IMClient {
             message.setContent(content);
             message.setType(MessageType.SINGLE_CHAT);
 
-            ProtocolMessage protocolMessage = new ProtocolMessage(
-                    MessageType.SINGLE_CHAT,
+            ProtocolMessage protocolMsg = new ProtocolMessage(
+                    MessageType.SINGLE_CHAT.getCode(),
                     objectMapper.writeValueAsString(message)
             );
 
-            channel.writeAndFlush(protocolMessage).addListener((ChannelFutureListener) f -> {
+            channel.writeAndFlush(protocolMsg).addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
                     logger.error("发送消息失败", f.cause());
                 }
@@ -278,12 +303,12 @@ public class IMClient {
             message.setContent(content);
             message.setType(MessageType.GROUP_CHAT);
 
-            ProtocolMessage protocolMessage = new ProtocolMessage(
-                    MessageType.GROUP_CHAT,
+            ProtocolMessage protocolMsg = new ProtocolMessage(
+                    MessageType.GROUP_CHAT.getCode(),
                     objectMapper.writeValueAsString(message)
             );
 
-            channel.writeAndFlush(protocolMessage).addListener((ChannelFutureListener) f -> {
+            channel.writeAndFlush(protocolMsg).addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
                     logger.error("发送群消息失败", f.cause());
                 }
@@ -299,41 +324,47 @@ public class IMClient {
     private void startConsoleInput() {
         new Thread(() -> {
             Scanner scanner = new Scanner(System.in);
-            logger.info("请输入消息（格式: [type] [target] [content]，例如: chat user123 你好）");
+            logger.info("控制台输入已启动，支持以下命令：");
+            logger.info("1. 发送单聊消息：chat [目标用户ID] [消息内容]");
+            logger.info("2. 发送群聊消息：group [群组ID] [消息内容]");
+            logger.info("3. 退出客户端：exit");
 
             while (!isShutdown) {
                 try {
-                    String input = scanner.nextLine().trim();
-                    if (input.isEmpty()) continue;
+                    if (scanner.hasNextLine()) {
+                        String input = scanner.nextLine().trim();
+                        if (input.isEmpty()) continue;
 
-                    String[] parts = input.split(" ", 3);
-                    if (parts.length < 3) {
-                        logger.info("格式错误，请重新输入");
-                        continue;
-                    }
+                        String[] parts = input.split(" ", 3);
+                        if (parts.length < 3) {
+                            if ("exit".equals(parts[0])) {
+                                shutdown();
+                                break;
+                            } else {
+                                logger.warn("命令格式错误，请重新输入");
+                                continue;
+                            }
+                        }
 
-                    String type = parts[0];
-                    String target = parts[1];
-                    String content = parts[2];
+                        String cmd = parts[0];
+                        String target = parts[1];
+                        String content = parts[2];
 
-                    switch (type) {
-                        case "chat":
-                            sendChatMessage(target, content);
-                            break;
-                        case "group":
-                            sendGroupMessage(target, content);
-                            break;
-                        case "exit":
-                            shutdown();
-                            break;
-                        default:
-                            logger.info("未知消息类型: {}", type);
+                        switch (cmd) {
+                            case "chat":
+                                sendChatMessage(target, content);
+                                break;
+                            case "group":
+                                sendGroupMessage(target, content);
+                                break;
+                            default:
+                                logger.warn("未知命令：{}", cmd);
+                        }
                     }
                 } catch (Exception e) {
-                    logger.error("处理输入失败", e);
+                    logger.error("处理输入异常", e);
                 }
             }
-
             scanner.close();
         }, "Console-Input-Thread").start();
     }
@@ -344,16 +375,16 @@ public class IMClient {
     private class ClientMessageHandler extends ChannelInboundHandlerAdapter {
 
         /**
-         * 处理收到的消息
+         * 处理接收到的消息
          */
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
             if (msg instanceof ProtocolMessage) {
-                ProtocolMessage protocolMessage = (ProtocolMessage) msg;
+                ProtocolMessage protocolMsg = (ProtocolMessage) msg;
                 try {
-                    handleProtocolMessage(ctx,protocolMessage);
+                    handleProtocolMessage(ctx, protocolMsg);
                 } catch (Exception e) {
-                    logger.error("处理消息失败", e);
+                    logger.error("处理消息异常", e);
                 }
             }
         }
@@ -361,19 +392,22 @@ public class IMClient {
         /**
          * 处理协议消息
          */
-        private void handleProtocolMessage(ChannelHandlerContext ctx,ProtocolMessage message) throws Exception {
-            MessageType type = MessageType.fromCode(message.getType());
-            String data = message.getData();
+        private void handleProtocolMessage(ChannelHandlerContext ctx, ProtocolMessage msg) throws Exception {
+            MessageType type = MessageType.fromCode(msg.getType());
+            String data = msg.getData();
 
             switch (type) {
                 case LOGIN_RESPONSE:
-                    handleLoginResponse(ctx,data);
+                    handleLoginResponse(ctx, data);
                     break;
                 case SINGLE_CHAT:
-                    handleChatMessage(data);
+                    handleSingleChat(data);
                     break;
                 case GROUP_CHAT:
-                    handleGroupMessage(data);
+                    handleGroupChat(data);
+                    break;
+                case PONG:
+                    logger.debug("收到服务器心跳响应");
                     break;
                 case SYSTEM_NOTIFY:
                     handleSystemNotify(data);
@@ -382,47 +416,46 @@ public class IMClient {
                     handleErrorResponse(data);
                     break;
                 default:
-                    logger.info("收到未知类型消息: {}", type);
+                    logger.info("收到未知类型消息：{}，内容：{}", type, data);
             }
         }
 
         /**
          * 处理登录响应
          */
-        private void handleLoginResponse(ChannelHandlerContext ctx,String data) {
-            try {
-                Map<String, String> response = objectMapper.readValue(data, Map.class);
-                String status = response.get("extra");
+        private void handleLoginResponse(ChannelHandlerContext ctx, String data) throws Exception {
+            Map<String, String> response = objectMapper.readValue(data, Map.class);
+            String status = response.get("extra");
 
-                if ("success".equals(status)) {
-                    userId = response.get("content");
-                    isLoginSuccess = true;
-                    reconnectConfig.reset(); // 登录成功重置重连配置
-                    logger.info("登录成功，用户ID: {}", userId);
-                } else {
-                    logger.error("登录失败: {}", response.get("content"));
-                    // 登录失败关闭连接，触发重连（但增加延迟）
-                    ctx.close();
-                }
-            } catch (Exception e) {
-                logger.error("解析登录响应失败", e);
+            if ("success".equals(status)) {
+                userId = response.get("content");
+                isLoginSuccess = true;
+                reconnectDelay = 1; // 重置重连延迟
+                logger.info("登录成功，用户ID：{}", userId);
+            } else {
+                String errorMsg = response.get("content");
+                logger.error("登录失败：{}", errorMsg);
+                // 登录失败后延迟关闭连接，确保错误消息发送完成
+                ctx.channel().close().addListener(f ->
+                        logger.info("登录失败，连接已关闭")
+                );
             }
         }
 
         /**
          * 处理单聊消息
          */
-        private void handleChatMessage(String data) throws Exception {
+        private void handleSingleChat(String data) throws Exception {
             IMMessage message = objectMapper.readValue(data, IMMessage.class);
-            logger.info("\n收到来自[{}]的消息: {}", message.getFrom(), message.getContent());
+            logger.info("\n收到来自[{}]的消息：{}", message.getFrom(), message.getContent());
         }
 
         /**
          * 处理群聊消息
          */
-        private void handleGroupMessage(String data) throws Exception {
+        private void handleGroupChat(String data) throws Exception {
             IMMessage message = objectMapper.readValue(data, IMMessage.class);
-            logger.info("\n收到来自群组[{}]中[{}]的消息: {}",
+            logger.info("\n收到群组[{}]中[{}]的消息：{}",
                     message.getGroupId(), message.getFrom(), message.getContent());
         }
 
@@ -431,7 +464,7 @@ public class IMClient {
          */
         private void handleSystemNotify(String data) throws Exception {
             IMMessage message = objectMapper.readValue(data, IMMessage.class);
-            logger.info("\n系统通知: {}", message.getContent());
+            logger.info("\n系统通知：{}", message.getContent());
         }
 
         /**
@@ -439,7 +472,7 @@ public class IMClient {
          */
         private void handleErrorResponse(String data) throws Exception {
             IMMessage message = objectMapper.readValue(data, IMMessage.class);
-            logger.error("\n错误消息: {}", message.getContent());
+            logger.error("\n错误消息：{}", message.getContent());
         }
 
         /**
@@ -450,15 +483,22 @@ public class IMClient {
             if (evt instanceof IdleStateEvent) {
                 IdleStateEvent event = (IdleStateEvent) evt;
                 if (event.state() == IdleState.WRITER_IDLE) {
-                    // 发送心跳
+                    // 发送心跳包
                     try {
                         ProtocolMessage ping = new ProtocolMessage(
-                                MessageType.PING,
+                                MessageType.PING.getCode(),
                                 "ping"
                         );
-                        ctx.writeAndFlush(ping);
+                        ctx.writeAndFlush(ping).addListener(future -> {
+                            if (!future.isSuccess()) {
+                                logger.error("发送心跳失败，准备重连", future.cause());
+                                ctx.close();
+                            } else {
+                                logger.debug("已发送心跳包");
+                            }
+                        });
                     } catch (Exception e) {
-                        logger.error("发送心跳失败", e);
+                        logger.error("构建心跳消息失败", e);
                     }
                 }
             }
@@ -469,51 +509,31 @@ public class IMClient {
          */
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-            logger.error("客户端发生异常", cause);
-            ctx.close(); // 发生异常关闭连接，触发重连
+            if (cause instanceof java.io.IOException && cause.getMessage().contains("Connection reset by peer")) {
+                logger.error("服务器主动关闭连接：可能是认证失败、超时或协议不匹配");
+            } else {
+                logger.error("客户端处理异常", cause);
+            }
+            ctx.close(); // 关闭连接触发重连
         }
     }
 
     /**
-     * 重连配置（指数退避策略）
-     */
-    private static class ReconnectConfig {
-        private static final int MIN_DELAY = 1; // 最小重连延迟（秒）
-        private static final int MAX_DELAY = 60; // 最大重连延迟（秒）
-        private int currentDelay = MIN_DELAY;
-
-        /**
-         * 获取下一次重连延迟（指数增长）
-         */
-        public int getNextDelay() {
-            int delay = currentDelay;
-            // 下次延迟翻倍，但不超过最大值
-            currentDelay = Math.min(currentDelay * 2, MAX_DELAY);
-            return delay;
-        }
-
-        /**
-         * 重置重连延迟（登录成功后）
-         */
-        public void reset() {
-            currentDelay = MIN_DELAY;
-        }
-    }
-
-    /**
-     * 客户端入口方法
+     * 主方法：启动客户端
      */
     public static void main(String[] args) {
-        // 示例：连接到本地服务器
+        // 服务器地址和端口（根据实际情况修改）
         String host = "127.0.0.1";
-        int port = 8080;
-        String username = "testUser";
-        String password = "testPass123";
+        int port = 8888;
+
+        // 登录账号密码（根据实际情况修改）
+        String username = "user1";
+        String password = "123456";
 
         IMClient client = new IMClient(host, port, username, password);
         client.start();
 
-        // 注册关闭钩子
+        // 注册JVM关闭钩子
         Runtime.getRuntime().addShutdownHook(new Thread(client::shutdown));
     }
 }

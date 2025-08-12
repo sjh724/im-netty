@@ -42,7 +42,7 @@ public class HeartbeatHandler extends ChannelInboundHandlerAdapter {
     public void sendPong(ChannelHandlerContext ctx) {
         try {
             ProtocolMessage pong = new ProtocolMessage(
-                    MessageType.PONG,
+                    MessageType.PONG.getCode(),
                     "pong"
             );
             ctx.writeAndFlush(pong);

@@ -125,7 +125,7 @@ public class IMExceptionHandler {
                 errorMessage.setFrom("system");
                 errorMessage.setContent(errorMsg);
                 ProtocolMessage protocolMessage = new ProtocolMessage(
-                        MessageType.ERROR_RESPONSE,
+                        MessageType.ERROR_RESPONSE.getCode(),
                         new ObjectMapper().writeValueAsString(errorMessage)
                 );
                 ctx.writeAndFlush(protocolMessage);

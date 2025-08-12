@@ -232,7 +232,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
         Channel receiverChannel = userChannelMap.get(receiverId);
         if (receiverChannel != null && receiverChannel.isActive()) {
             ProtocolMessage protocolMessage = new ProtocolMessage(
-                    MessageType.SINGLE_CHAT,
+                    MessageType.SINGLE_CHAT.getCode(),
                     objectMapper.writeValueAsString(message)
             );
             receiverChannel.writeAndFlush(protocolMessage);
@@ -326,7 +326,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
                 Channel memberChannel = userChannelMap.get(memberId);
                 if (memberChannel != null && memberChannel.isActive()) {
                     ProtocolMessage protocolMessage = new ProtocolMessage(
-                            MessageType.GROUP_CHAT,
+                            MessageType.GROUP_CHAT.getCode(),
                             objectMapper.writeValueAsString(message)
                     );
                     memberChannel.writeAndFlush(protocolMessage);
@@ -595,7 +595,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
                 for (MessageEntity msg : unreadMessages) {
                     IMMessage imMsg = convertToIMMessage(msg);
                     channel.writeAndFlush(new ProtocolMessage(
-                            imMsg.getType(),
+                            imMsg.getType().getCode(),
                             objectMapper.writeValueAsString(imMsg)
                     ));
                 }
@@ -634,7 +634,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
         response.setContent(content);
 
         ctx.writeAndFlush(new ProtocolMessage(
-                type,
+                type.getCode(),
                 objectMapper.writeValueAsString(response)
         ));
     }
@@ -653,7 +653,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
             response.setContent(content);
 
             channel.writeAndFlush(new ProtocolMessage(
-                    type,
+                    type.getCode(),
                     objectMapper.writeValueAsString(response)
             ));
         }
@@ -666,7 +666,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
         Channel channel = userChannelMap.get(userId);
         if (channel != null && channel.isActive()) {
             channel.writeAndFlush(new ProtocolMessage(
-                    type,
+                    type.getCode(),
                     content
             ));
         }
@@ -683,7 +683,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
         notify.setContent(content);
 
         channel.writeAndFlush(new ProtocolMessage(
-                MessageType.SYSTEM_NOTIFY,
+                MessageType.SYSTEM_NOTIFY.getCode(),
                 objectMapper.writeValueAsString(notify)
         ));
     }
@@ -706,7 +706,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
             Channel channel = userChannelMap.get(member.getUserId());
             if (channel != null && channel.isActive()) {
                 channel.writeAndFlush(new ProtocolMessage(
-                        MessageType.SYSTEM_NOTIFY,
+                        MessageType.SYSTEM_NOTIFY.getCode(),
                         notifyData
                 ));
             }
