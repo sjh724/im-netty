@@ -7,6 +7,7 @@ import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -17,6 +18,8 @@ public class IMNettyServer {
     private EventLoopGroup workerGroup;
     private Channel channel;
 
+    @Autowired
+    private IMChannelInitializer imChannelInitializer;
     public IMNettyServer(@Value("${im.server.port:8888}") int port) {
         this.port = port;
     }
@@ -29,7 +32,7 @@ public class IMNettyServer {
         ServerBootstrap bootstrap = new ServerBootstrap();
         bootstrap.group(bossGroup, workerGroup)
                 .channel(NioServerSocketChannel.class)
-                .childHandler(new IMChannelInitializer())
+                .childHandler(imChannelInitializer)
                 .option(ChannelOption.SO_BACKLOG, 128)
                 .childOption(ChannelOption.SO_KEEPALIVE, true)
                 // TCP_NODELAY禁用Nagle算法，减少延迟

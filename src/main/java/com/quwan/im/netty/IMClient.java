@@ -23,7 +23,9 @@ import io.netty.util.CharsetUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.util.DigestUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
@@ -527,10 +529,11 @@ public class IMClient {
         int port = 8888;
 
         // 登录账号密码（根据实际情况修改）
-        String username = "user1";
+        String username = "Tom";
         String password = "123456";
-
-        IMClient client = new IMClient(host, port, username, password);
+        String encryptedPassword = DigestUtils.md5DigestAsHex(
+                password.getBytes(StandardCharsets.UTF_8));
+        IMClient client = new IMClient(host, port, username, encryptedPassword);
         client.start();
 
         // 注册JVM关闭钩子
