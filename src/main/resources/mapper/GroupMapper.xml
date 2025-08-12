@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.quwan.im.mapper.GroupMapper">
+
+    <!-- 根据群主ID查询群组 -->
+    <select id="selectByOwnerId" resultType="com.quwan.im.entity.GroupEntity">
+        SELECT * FROM im_group
+        WHERE owner_id = #{ownerId}
+        ORDER BY create_time DESC
+    </select>
+
+    <!-- 查询群组详情（关联群主信息） -->
+    <select id="selectGroupDetail" resultType="com.quwan.im.entity.GroupEntity">
+        SELECT
+            g.*,
+            u.username AS owner_name,
+            u.avatar AS owner_avatar
+        FROM im_group g
+                 LEFT JOIN im_user u ON g.owner_id = u.user_id
+        WHERE g.group_id = #{groupId}
+            LIMIT 1
+    </select>
+
+    <!-- 查询用户加入的群组 -->
+    <select id="selectUserGroups" resultType="com.quwan.im.entity.GroupEntity">
+        SELECT g.* FROM im_group g
+                            INNER JOIN im_group_member gm ON g.group_id = gm.group_id
+        WHERE gm.user_id = #{userId}
+        ORDER BY g.create_time DESC
+    </select>
+
+    <!-- 批量查询群组信息 -->
+    <select id="selectBatchByGroupIds" resultType="com.quwan.im.entity.GroupEntity">
+        SELECT * FROM im_group
+        WHERE group_id IN
+        <foreach collection="groupIds" item="groupId" open="(" separator="," close=")">
+            #{groupId}
+        </foreach>
+        ORDER BY create_time DESC
+    </select>
+</mapper>

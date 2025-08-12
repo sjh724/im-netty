@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.quwan.im.mapper.FriendRequestMapper">
+
+    <!-- 插入好友请求 -->
+    <insert id="insertRequest">
+        INSERT INTO im_friend_request (from_user, to_user, remark, status)
+        VALUES (#{fromUser}, #{toUser}, #{remark}, 'PENDING')
+    </insert>
+
+    <!-- 更新请求状态 -->
+    <update id="updateRequestStatus">
+        UPDATE im_friend_request
+        SET status = #{status}, update_time = NOW()
+        WHERE from_user = #{fromUser} AND to_user = #{toUser}
+    </update>
+
+    <!-- 查询用户发出的请求 -->
+    <select id="selectSentRequests" resultType="com.quwan.im.entity.FriendRequestEntity">
+        SELECT * FROM im_friend_request
+        WHERE from_user = #{userId}
+        ORDER BY create_time DESC
+    </select>
+
+    <!-- 查询用户收到的请求 -->
+    <select id="selectReceivedRequests" resultType="com.quwan.im.entity.FriendRequestEntity">
+        SELECT * FROM im_friend_request
+        WHERE to_user = #{userId}
+        ORDER BY create_time DESC
+    </select>
+
+    <!-- 查询单个请求 -->
+    <select id="selectRequest" resultType="com.quwan.im.entity.FriendRequestEntity">
+        SELECT * FROM im_friend_request
+        WHERE from_user = #{fromUser} AND to_user = #{toUser}
+    </select>
+</mapper>

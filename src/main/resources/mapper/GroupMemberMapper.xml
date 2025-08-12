@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.quwan.im.mapper.GroupMemberMapper">
+
+    <!-- 查询群成员列表 -->
+    <select id="selectMembersByGroupId" resultType="com.quwan.im.entity.GroupMemberEntity">
+        SELECT * FROM im_group_member
+        WHERE group_id = #{groupId}
+    </select>
+
+    <!-- 查询用户加入的群组 -->
+    <select id="selectGroupsByUserId" resultType="com.quwan.im.entity.GroupMemberEntity">
+        SELECT * FROM im_group_member
+        WHERE user_id = #{userId}
+    </select>
+
+    <!-- 检查是否为群成员 -->
+    <select id="isGroupMember" resultType="java.lang.Boolean">
+        SELECT COUNT(1) > 0 FROM im_group_member
+        WHERE group_id = #{groupId} AND user_id = #{userId}
+    </select>
+</mapper>

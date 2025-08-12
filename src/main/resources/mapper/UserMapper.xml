@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.quwan.im.mapper.UserMapper">
+
+    <!-- 根据用户名查询用户 -->
+    <select id="selectByUsername" resultType="com.quwan.im.entity.UserEntity">
+        SELECT * FROM im_user WHERE username = #{username}
+    </select>
+
+    <!-- 更新用户状态 -->
+    <update id="updateStatus">
+        UPDATE im_user
+        SET status = #{status}, update_time = NOW()
+        WHERE user_id = #{userId}
+    </update>
+
+    <!-- 检查用户是否存在 -->
+    <select id="existsById" resultType="java.lang.Boolean">
+        SELECT COUNT(1) > 0 FROM im_user WHERE user_id = #{userId}
+    </select>
+
+    <select id="selectByUserId" resultType="com.quwan.im.entity.UserEntity">
+        SELECT * FROM im_user WHERE user_id = #{userId}
+    </select>
+</mapper>

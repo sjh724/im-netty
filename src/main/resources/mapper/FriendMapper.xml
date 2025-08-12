@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.quwan.im.mapper.FriendMapper">
+
+    <!-- 查询用户好友列表 -->
+    <select id="selectFriendsByUserId" resultType="com.quwan.im.entity.FriendEntity">
+        SELECT * FROM im_friend
+        WHERE user_id = #{userId} AND status = 'NORMAL'
+    </select>
+
+    <!-- 检查是否为好友 -->
+    <select id="isFriend" resultType="java.lang.Boolean">
+        SELECT COUNT(1) > 0 FROM im_friend
+        WHERE (user_id = #{userId} AND friend_id = #{friendId} AND status = 'NORMAL')
+           OR (user_id = #{friendId} AND friend_id = #{userId} AND status = 'NORMAL')
+    </select>
+
+    <!-- 查询未处理的好友请求 -->
+    <select id="selectPendingRequests" resultType="com.quwan.im.entity.FriendEntity">
+        SELECT * FROM im_friend_request
+        WHERE to_user = #{userId} AND status = 'PENDING'
+        ORDER BY create_time ASC
+    </select>
+</mapper>
