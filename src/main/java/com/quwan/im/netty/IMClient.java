@@ -12,7 +12,6 @@ import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
@@ -121,25 +120,16 @@ public class IMClient {
                         protected void initChannel(SocketChannel ch) {
                             ChannelPipeline pipeline = ch.pipeline();
 
-                            // 1. 粘包拆包处理器（与服务器端保持一致：魔数4 + 版本1 + 类型1 → 长度字段偏移6，strip 4）
-                            pipeline.addLast("frameDecoder", new LengthFieldBasedFrameDecoder(
-                                    10 * 1024 * 1024,
-                                    6,
-                                    4,
-                                    0,
-                                    4
-                            ));
-
-                            // 2. 二进制编解码器
+                        // 1. 二进制编解码器（内部已处理粘包/拆包）
                             pipeline.addLast("messageDecoder", new BinaryMessageDecoder());
                             pipeline.addLast("messageEncoder", new BinaryMessageEncoder());
 
-                            // 3. 心跳检测（客户端20秒未发送消息则发送心跳，小于服务器30秒超时）
+                        // 2. 心跳检测（客户端20秒未发送消息则发送心跳，小于服务器30秒超时）
                             pipeline.addLast("idleStateHandler", new IdleStateHandler(
                                     0, 20, 0, TimeUnit.SECONDS
                             ));
 
-                            // 4. 客户端消息处理器
+                        // 3. 客户端消息处理器
                             pipeline.addLast("clientHandler", new ClientMessageHandler());
                         }
                     });
@@ -520,11 +510,10 @@ public class IMClient {
         int port = 8888;
 
         // 登录账号密码（根据实际情况修改）
-        String username = "Tom";
+        String username = "Jerry";
         String password = "123456";
-        String encryptedPassword = DigestUtils.md5DigestAsHex(
-                password.getBytes(StandardCharsets.UTF_8));
-        IMClient client = new IMClient(host, port, username, encryptedPassword);
+
+        IMClient client = new IMClient(host, port, username, password);
         client.start();
 
         // 注册JVM关闭钩子

@@ -78,6 +78,15 @@ public class BinaryMessageEncoder extends MessageToByteEncoder<ProtocolMessage> 
 
     /**
      * 将IMMessage编码为二进制格式
+     * 格式：
+     * [msgType(1)]
+     * [idLen(2)+id]
+     * [fromLen(2)+from]
+     * [toLen(2)+to]
+     * [groupIdLen(2)+groupId]
+     * [contentLen(2)+content]
+     * [extraLen(2)+extra]
+     * [timestamp(8)]
      */
     private byte[] encodeIMMessageToBinary(IMMessage imMessage) {
         ByteBuf buf = Unpooled.buffer();
@@ -99,6 +108,9 @@ public class BinaryMessageEncoder extends MessageToByteEncoder<ProtocolMessage> 
             
             // 消息内容（长度+内容）
             writeString(buf, imMessage.getContent());
+            
+            // 额外字段（长度+内容），用于承载状态等轻量信息
+            writeString(buf, imMessage.getExtra());
             
             // 时间戳（8字节）
             buf.writeLong(imMessage.getTimestamp());

@@ -42,67 +42,62 @@ public class BinaryMessageDecoder extends LengthFieldBasedFrameDecoder {
 
     @Override
     protected Object decode(ChannelHandlerContext ctx, ByteBuf in) throws Exception {
-        logger.debug("进入二进制解码器，当前可读字节数: {}", in.readableBytes());
-        
-        // 调用父类方法获取完整帧（处理粘包拆包）
+        logger.debug("进入二进制解码器，可读字节: {}", in.readableBytes());
+
+        // 获取完整帧（已按长度字段切分）
         ByteBuf frame = (ByteBuf) super.decode(ctx, in);
         if (frame == null) {
-            logger.debug("帧数据不完整，等待后续数据");
             return null;
         }
 
         try {
-            // 1. 验证魔数（4字节）
+            int startReaderIndex = frame.readerIndex();
+
+            // 1) 魔数
             int magic = frame.readInt();
             if (magic != ProtocolMessage.MAGIC_NUMBER) {
-                logger.error("无效魔数，预期: 0x{}, 实际: 0x{}，关闭连接",
-                        Integer.toHexString(ProtocolMessage.MAGIC_NUMBER),
-                        Integer.toHexString(magic));
+                logger.error("[Decode] 无效魔数, expected=0x{}, actual=0x{}; 关闭连接", Integer.toHexString(ProtocolMessage.MAGIC_NUMBER), Integer.toHexString(magic));
                 ctx.channel().close();
                 return null;
             }
 
-            // 2. 解析版本（1字节）
+            // 2) 版本
             byte version = frame.readByte();
-            logger.debug("解析到协议版本: {}", version);
-
-            // 3. 解析消息类型（1字节）
+            // 3) 类型
             byte type = frame.readByte();
-            logger.debug("解析到消息类型: {}", type);
-
-            // 4. 解析数据长度（4字节）
+            // 4) 负载长度
             int dataLength = frame.readInt();
-            logger.debug("解析到数据长度: {} bytes", dataLength);
 
-            // 5. 验证数据长度合理性
             if (dataLength < 0 || dataLength > (MAX_FRAME_LENGTH - LENGTH_FIELD_OFFSET - LENGTH_FIELD_LENGTH)) {
-                logger.error("数据长度异常: {} bytes（超过最大限制），关闭连接", dataLength);
+                logger.error("[Decode] 非法负载长度: {} (readerIndex={}, readable={})", dataLength, frame.readerIndex(), frame.readableBytes());
                 ctx.channel().close();
                 return null;
             }
 
-            // 6. 校验剩余字节是否足够
             if (frame.readableBytes() < dataLength) {
-                logger.error("数据长度不匹配：声明长度{}，实际可读{}，关闭连接", dataLength, frame.readableBytes());
+                logger.error("[Decode] 长度不匹配: 声明={} 实际可读={} (headerReadAt={})", dataLength, frame.readableBytes(), startReaderIndex);
                 ctx.channel().close();
                 return null;
             }
 
-            // 7. 解析数据体
+            // 5) 解析数据体
             String data = decodeBinaryData(frame, dataLength);
 
-            // 8. 构建ProtocolMessage对象
             ProtocolMessage message = new ProtocolMessage();
             message.setVersion(version);
             message.setType(type);
             message.setDataLength(dataLength);
             message.setData(data);
 
-            logger.debug("二进制消息解析成功，类型: {}，数据长度: {}", type, dataLength);
+            logger.debug("[Decode] OK type={}, version={}, len={}", type, version, dataLength);
             return message;
-
         } catch (Exception e) {
-            logger.error("二进制消息解码失败", e);
+            // 打印数据体前最多64字节用于排障
+            int previewLen = Math.min(64, in.readableBytes());
+            byte[] preview = new byte[previewLen];
+            int idx = in.readerIndex();
+            in.getBytes(idx, preview);
+            logger.error("[Decode] 解码异常，预览前{}字节: {}", previewLen, bytesToHex(preview), e);
             ctx.channel().close();
             return null;
         } finally {
@@ -118,31 +113,33 @@ public class BinaryMessageDecoder extends LengthFieldBasedFrameDecoder {
             return "";
         }
 
-        // 先尝试按普通字符串处理（JSON格式）
+        // 标记负载起始位置
+        frame.markReaderIndex();
+
+        // 尝试按 JSON（字符串）解析
+        byte[] dataBytes = new byte[dataLength];
+        frame.readBytes(dataBytes);
+        String jsonString = new String(dataBytes, StandardCharsets.UTF_8);
         try {
-            byte[] dataBytes = new byte[dataLength];
-            frame.readBytes(dataBytes);
-            String jsonString = new String(dataBytes, StandardCharsets.UTF_8);
-            
-            // 验证是否为有效的JSON格式
-            try {
-                objectMapper.readTree(jsonString);
-                logger.debug("数据是JSON格式，按字符串处理: {}", jsonString);
-                return jsonString;
-            } catch (Exception e) {
-                // 不是JSON格式，尝试解析为IMMessage格式
-                logger.debug("数据不是JSON格式，尝试解析为IMMessage格式");
-                // 重置ByteBuf位置，重新读取
-                frame.resetReaderIndex();
-                frame.skipBytes(frame.readableBytes() - dataLength);
-                
-                IMMessage imMessage = decodeBinaryToIMMessage(frame);
-                return objectMapper.writeValueAsString(imMessage);
-            }
-        } catch (Exception e) {
-            logger.error("二进制数据解码失败", e);
-            throw e;
+            objectMapper.readTree(jsonString); // 有效 JSON
+            logger.debug("[Decode] 负载为JSON字符串");
+            return jsonString;
+        } catch (Exception notJson) {
+            // 回退到负载起始，按 IMMessage 二进制解析
+            frame.resetReaderIndex();
+            IMMessage imMessage = decodeBinaryToIMMessage(frame);
+            logger.debug("[Decode] 负载为IMMessage二进制");
+            return objectMapper.writeValueAsString(imMessage);
         }
+    }
+
+    private static String bytesToHex(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) return "";
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) {
+            sb.append(String.format("%02X ", b));
+        }
+        return sb.toString().trim();
     }
 
     /**
@@ -169,6 +166,9 @@ public class BinaryMessageDecoder extends LengthFieldBasedFrameDecoder {
         
         // 消息内容（长度+内容）
         imMessage.setContent(readString(frame));
+
+        // 额外字段（长度+内容）
+        imMessage.setExtra(readString(frame));
         
         // 时间戳（8字节）
         imMessage.setTimestamp(frame.readLong());
