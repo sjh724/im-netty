@@ -47,8 +47,24 @@ public class IMChannelInitializer extends ChannelInitializer<SocketChannel> {
     protected void initChannel(SocketChannel ch) {
         ChannelPipeline pipeline = ch.pipeline();
 
-        // 1. 自定义消息编解码器（处理IM消息对象）
-        // MessageDecoder已经继承了LengthFieldBasedFrameDecoder，处理粘包拆包
+        // 1. 粘包拆包处理器
+        // 基于长度字段的帧解码器，解决TCP粘包问题
+        pipeline.addLast("frameDecoder", new LengthFieldBasedFrameDecoder(
+                MAX_FRAME_LENGTH,
+                LENGTH_FIELD_OFFSET,
+                LENGTH_FIELD_LENGTH,
+                LENGTH_ADJUSTMENT,
+                INITIAL_BYTES_TO_STRIP
+        ));
+
+//        // 长度字段预处理器，在消息前添加长度字段
+//        pipeline.addLast("frameEncoder", new LengthFieldPrepender(LENGTH_FIELD_LENGTH));
+
+        // 2. 字符串编解码器（处理文本消息）
+//        pipeline.addLast("stringDecoder", new StringDecoder(CharsetUtil.UTF_8));
+//        pipeline.addLast("stringEncoder", new StringEncoder(CharsetUtil.UTF_8));
+
+        // 3. 自定义消息编解码器（处理IM消息对象）
         pipeline.addLast("messageDecoder", new MessageDecoder());
         pipeline.addLast("messageEncoder", new MessageEncoder());
 
