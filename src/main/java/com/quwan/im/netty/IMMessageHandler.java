@@ -20,12 +20,16 @@ import io.netty.util.AttributeKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 
 /**
@@ -56,6 +60,15 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
 
     @Autowired
     private GroupService groupService;
+
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
+
+    @Autowired
+    private Executor messageTaskExecutor;
+
+    @Autowired
+    private Executor dbTaskExecutor;
 
     /**
      * 核心消息分发方法，与MessageType枚举一一对应
@@ -181,11 +194,20 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
         ctx.channel().attr(USER_ID_ATTRIBUTE).set(userId);
         userChannelMap.put(userId, ctx.channel());
 
+        // 缓存用户在线状态
+        redisTemplate.opsForValue().set("user:online:" + userId, "1", java.time.Duration.ofMinutes(30));
+
         logger.info("用户[{}]登录成功", userId);
         sendResponse(ctx, MessageType.LOGIN_RESPONSE, "success", userId);
 
-        // 推送未读消息
-        pushUnreadMessages(userId);
+        // 异步推送未读消息
+        messageTaskExecutor.execute(() -> {
+            try {
+                pushUnreadMessages(userId);
+            } catch (Exception e) {
+                logger.error("推送未读消息失败", e);
+            }
+        });
     }
 
     /**
@@ -195,7 +217,18 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
 
         if (userId != null) {
             userChannelMap.remove(userId);
-            userService.updateUserStatus(userId, "OFFLINE");
+            // 异步更新用户状态
+            dbTaskExecutor.execute(() -> {
+                try {
+                    userService.updateUserStatus(userId, "OFFLINE");
+                } catch (Exception e) {
+                    logger.error("更新用户状态失败", e);
+                }
+            });
+            
+            // 清除缓存
+            redisTemplate.delete("user:online:" + userId);
+            
             logger.info("用户[{}]主动登出", userId);
             sendResponse(ctx, MessageType.LOGOUT_RESPONSE, "success", "已成功登出");
         }
@@ -239,15 +272,29 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
         message.setFrom(senderId);
         message.setType(MessageType.SINGLE_CHAT);
 
-        // 保存消息
-        messageService.saveMessage(message, "SENT");
+        // 异步保存消息
+        dbTaskExecutor.execute(() -> {
+            try {
+                messageService.saveMessage(message, "SENT");
+            } catch (Exception e) {
+                logger.error("保存消息失败", e);
+            }
+        });
 
         // 转发给接收方
         Channel receiverChannel = userChannelMap.get(receiverId);
         if (receiverChannel != null && receiverChannel.isActive()) {
             ProtocolMessage protocolMessage = new ProtocolMessage(MessageType.SINGLE_CHAT.getCode(), objectMapper.writeValueAsString(message));
             receiverChannel.writeAndFlush(protocolMessage);
-            messageService.updateMessageStatus(message.getId(), "DELIVERED");
+            
+            // 异步更新消息状态
+            dbTaskExecutor.execute(() -> {
+                try {
+                    messageService.updateMessageStatus(message.getId(), "DELIVERED");
+                } catch (Exception e) {
+                    logger.error("更新消息状态失败", e);
+                }
+            });
         }
 
         // 响应发送方
@@ -261,7 +308,15 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
 
         Map<String, String> ackData = objectMapper.readValue(data, Map.class);
         String messageId = ackData.get("messageId");
-        messageService.updateMessageStatus(messageId, "DELIVERED");
+        
+        // 异步更新消息状态
+        dbTaskExecutor.execute(() -> {
+            try {
+                messageService.updateMessageStatus(messageId, "DELIVERED");
+            } catch (Exception e) {
+                logger.error("更新消息状态失败", e);
+            }
+        });
     }
 
     /**
@@ -271,7 +326,15 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
 
         Map<String, String> readData = objectMapper.readValue(data, Map.class);
         String messageId = readData.get("messageId");
-        messageService.updateMessageStatus(messageId, "READ");
+        
+        // 异步更新消息状态
+        dbTaskExecutor.execute(() -> {
+            try {
+                messageService.updateMessageStatus(messageId, "READ");
+            } catch (Exception e) {
+                logger.error("更新消息状态失败", e);
+            }
+        });
 
         // 通知发送方消息已读
         String senderId = readData.get("senderId");
@@ -294,8 +357,14 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
             return;
         }
 
-        // 更新消息状态为撤回
-        messageService.updateMessageStatus(messageId, "RECALLED");
+        // 异步更新消息状态
+        dbTaskExecutor.execute(() -> {
+            try {
+                messageService.updateMessageStatus(messageId, "RECALLED");
+            } catch (Exception e) {
+                logger.error("更新消息状态失败", e);
+            }
+        });
 
         // 通知接收方消息已撤回
         IMMessage recallNotify = new IMMessage();
@@ -331,21 +400,33 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
         message.setFrom(senderId);
         message.setType(MessageType.GROUP_CHAT);
 
-        // 保存消息
-        messageService.saveMessage(message, "SENT");
-
-        // 转发给群成员
-        List<GroupMemberEntity> members = groupService.getGroupMembers(groupId);
-        for (GroupMemberEntity member : members) {
-            String memberId = member.getUserId();
-            if (!memberId.equals(senderId)) { // 跳过发送者
-                Channel memberChannel = userChannelMap.get(memberId);
-                if (memberChannel != null && memberChannel.isActive()) {
-                    ProtocolMessage protocolMessage = new ProtocolMessage(MessageType.GROUP_CHAT.getCode(), objectMapper.writeValueAsString(message));
-                    memberChannel.writeAndFlush(protocolMessage);
-                }
+        // 异步保存消息
+        dbTaskExecutor.execute(() -> {
+            try {
+                messageService.saveMessage(message, "SENT");
+            } catch (Exception e) {
+                logger.error("保存消息失败", e);
             }
-        }
+        });
+
+        // 异步转发给群成员
+        messageTaskExecutor.execute(() -> {
+            try {
+                List<GroupMemberEntity> members = groupService.getGroupMembers(groupId);
+                for (GroupMemberEntity member : members) {
+                    String memberId = member.getUserId();
+                    if (!memberId.equals(senderId)) { // 跳过发送者
+                        Channel memberChannel = userChannelMap.get(memberId);
+                        if (memberChannel != null && memberChannel.isActive()) {
+                            ProtocolMessage protocolMessage = new ProtocolMessage(MessageType.GROUP_CHAT.getCode(), objectMapper.writeValueAsString(message));
+                            memberChannel.writeAndFlush(protocolMessage);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                logger.error("转发群聊消息失败", e);
+            }
+        });
 
         // 响应发送方
         sendResponseToUser(senderId, MessageType.GROUP_CHAT_ACK, "success", message.getId());
@@ -358,7 +439,15 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
 
         Map<String, String> ackData = objectMapper.readValue(data, Map.class);
         String messageId = ackData.get("messageId");
-        messageService.updateMessageStatus(messageId, "DELIVERED");
+        
+        // 异步更新消息状态
+        dbTaskExecutor.execute(() -> {
+            try {
+                messageService.updateMessageStatus(messageId, "DELIVERED");
+            } catch (Exception e) {
+                logger.error("更新消息状态失败", e);
+            }
+        });
     }
 
     /**
@@ -368,7 +457,15 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
 
         Map<String, String> readData = objectMapper.readValue(data, Map.class);
         String messageId = readData.get("messageId");
-        messageService.updateMessageStatus(messageId, "READ");
+        
+        // 异步更新消息状态
+        dbTaskExecutor.execute(() -> {
+            try {
+                messageService.updateMessageStatus(messageId, "READ");
+            } catch (Exception e) {
+                logger.error("更新消息状态失败", e);
+            }
+        });
     }
 
     /**
@@ -393,21 +490,40 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
             return;
         }
 
-        // 更新消息状态
-        messageService.updateMessageStatus(messageId, "RECALLED");
+        // 异步更新消息状态
+        dbTaskExecutor.execute(() -> {
+            try {
+                messageService.updateMessageStatus(messageId, "RECALLED");
+            } catch (Exception e) {
+                logger.error("更新消息状态失败", e);
+            }
+        });
 
-        // 通知群成员消息已撤回
-        IMMessage recallNotify = new IMMessage();
-        recallNotify.setId(UUID.randomUUID().toString());
-        recallNotify.setType(MessageType.GROUP_CHAT_RECALL);
-        recallNotify.setFrom(operatorId);
-        recallNotify.setGroupId(groupId);
-        recallNotify.setContent(messageId);
+        // 异步通知群成员消息已撤回
+        messageTaskExecutor.execute(() -> {
+            try {
+                IMMessage recallNotify = new IMMessage();
+                recallNotify.setId(UUID.randomUUID().toString());
+                recallNotify.setType(MessageType.GROUP_CHAT_RECALL);
+                recallNotify.setFrom(operatorId);
+                recallNotify.setGroupId(groupId);
+                recallNotify.setContent(messageId);
 
-        List<GroupMemberEntity> members = groupService.getGroupMembers(groupId);
-        for (GroupMemberEntity member : members) {
-            sendToUser(member.getUserId(), MessageType.GROUP_CHAT_RECALL, objectMapper.writeValueAsString(recallNotify));
-        }
+                String notifyData = objectMapper.writeValueAsString(recallNotify);
+                List<GroupMemberEntity> members = groupService.getGroupMembers(groupId);
+
+                for (GroupMemberEntity member : members) {
+                    Channel channel = userChannelMap.get(member.getUserId());
+                    if (channel != null && channel.isActive()) {
+                        channel.writeAndFlush(new ProtocolMessage(MessageType.GROUP_CHAT_RECALL.getCode(), notifyData));
+                    }
+                }
+            } catch (Exception e) {
+                logger.error("通知群成员消息撤回失败", e);
+            }
+        });
+
+        sendResponseToUser(operatorId, MessageType.SYSTEM_NOTIFY, "success", "消息已撤回");
     }
 
 
@@ -584,7 +700,18 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
         String userId = getUserIdFromChannel(ctx.channel());
         if (userId != null) {
             userChannelMap.remove(userId);
-            userService.updateUserStatus(userId, "OFFLINE");
+            // 异步更新用户状态
+            dbTaskExecutor.execute(() -> {
+                try {
+                    userService.updateUserStatus(userId, "OFFLINE");
+                } catch (Exception e) {
+                    logger.error("更新用户状态失败", e);
+                }
+            });
+            
+            // 清除缓存
+            redisTemplate.delete("user:online:" + userId);
+            
             logger.info("用户[{}]连接断开", userId);
         }
     }
