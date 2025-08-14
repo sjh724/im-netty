@@ -118,16 +118,30 @@ public class BinaryMessageDecoder extends LengthFieldBasedFrameDecoder {
             return "";
         }
 
-        // 尝试解析为IMMessage格式
+        // 先尝试按普通字符串处理（JSON格式）
         try {
-            IMMessage imMessage = decodeBinaryToIMMessage(frame);
-            return objectMapper.writeValueAsString(imMessage);
-        } catch (Exception e) {
-            // 如果不是IMMessage格式，按普通字符串处理
-            logger.debug("数据不是IMMessage格式，按字符串处理");
             byte[] dataBytes = new byte[dataLength];
             frame.readBytes(dataBytes);
-            return new String(dataBytes, StandardCharsets.UTF_8);
+            String jsonString = new String(dataBytes, StandardCharsets.UTF_8);
+            
+            // 验证是否为有效的JSON格式
+            try {
+                objectMapper.readTree(jsonString);
+                logger.debug("数据是JSON格式，按字符串处理: {}", jsonString);
+                return jsonString;
+            } catch (Exception e) {
+                // 不是JSON格式，尝试解析为IMMessage格式
+                logger.debug("数据不是JSON格式，尝试解析为IMMessage格式");
+                // 重置ByteBuf位置，重新读取
+                frame.resetReaderIndex();
+                frame.skipBytes(frame.readableBytes() - dataLength);
+                
+                IMMessage imMessage = decodeBinaryToIMMessage(frame);
+                return objectMapper.writeValueAsString(imMessage);
+            }
+        } catch (Exception e) {
+            logger.error("二进制数据解码失败", e);
+            throw e;
         }
     }
 
