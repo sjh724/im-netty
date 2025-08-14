@@ -1,8 +1,8 @@
 package com.quwan.im.netty;
 
 
-import com.quwan.im.protocol.MessageDecoder;
-import com.quwan.im.protocol.MessageEncoder;
+import com.quwan.im.protocol.BinaryMessageDecoder;
+import com.quwan.im.protocol.BinaryMessageEncoder;
 import com.quwan.im.model.IMMessage;
 import com.quwan.im.model.MessageType;
 import com.quwan.im.model.ProtocolMessage;
@@ -13,13 +13,9 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
-import io.netty.handler.codec.LengthFieldPrepender;
-import io.netty.handler.codec.string.StringDecoder;
-import io.netty.handler.codec.string.StringEncoder;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
-import io.netty.util.CharsetUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -125,30 +121,25 @@ public class IMClient {
                         protected void initChannel(SocketChannel ch) {
                             ChannelPipeline pipeline = ch.pipeline();
 
-                            // 1. 粘包拆包处理器（与服务器端完全一致）
+                            // 1. 粘包拆包处理器（与服务器端保持一致：魔数4 + 版本1 + 类型1 → 长度字段偏移6，strip 4）
                             pipeline.addLast("frameDecoder", new LengthFieldBasedFrameDecoder(
-                                    10 * 1024 * 1024, // 最大帧长度
-                                    0, // 长度字段偏移量
-                                    4, // 长度字段占用字节数
-                                    0, // 长度调整值
-                                    4  // 跳过的初始字节数
+                                    10 * 1024 * 1024,
+                                    6,
+                                    4,
+                                    0,
+                                    4
                             ));
-                            pipeline.addLast("frameEncoder", new LengthFieldPrepender(4));
 
-                            // 2. 字符串编解码器（与服务器端一致）
-                            pipeline.addLast("stringDecoder", new StringDecoder(CharsetUtil.UTF_8));
-                            pipeline.addLast("stringEncoder", new StringEncoder(CharsetUtil.UTF_8));
+                            // 2. 二进制编解码器
+                            pipeline.addLast("messageDecoder", new BinaryMessageDecoder());
+                            pipeline.addLast("messageEncoder", new BinaryMessageEncoder());
 
-                            // 3. 自定义消息编解码器
-                            pipeline.addLast("messageDecoder", new MessageDecoder());
-                            pipeline.addLast("messageEncoder", new MessageEncoder());
-
-                            // 4. 心跳检测（客户端20秒未发送消息则发送心跳，小于服务器30秒超时）
+                            // 3. 心跳检测（客户端20秒未发送消息则发送心跳，小于服务器30秒超时）
                             pipeline.addLast("idleStateHandler", new IdleStateHandler(
                                     0, 20, 0, TimeUnit.SECONDS
                             ));
 
-                            // 5. 客户端消息处理器
+                            // 4. 客户端消息处理器
                             pipeline.addLast("clientHandler", new ClientMessageHandler());
                         }
                     });
