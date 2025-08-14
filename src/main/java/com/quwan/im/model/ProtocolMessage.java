@@ -2,6 +2,7 @@ package com.quwan.im.model;
 
 import lombok.Data;
 import java.io.Serializable;
+import java.nio.charset.StandardCharsets;
 
 /**
  * 自定义协议消息
@@ -18,7 +19,7 @@ public class ProtocolMessage implements Serializable {
     private byte version = 1;
 
     // 消息类型
-    private int type;
+    private byte type;
 
     // 数据内容（JSON格式的IMMessage）
     private String data;
@@ -29,8 +30,9 @@ public class ProtocolMessage implements Serializable {
     public ProtocolMessage() {}
 
     public ProtocolMessage(int code, String data) {
-        this.type = code;
+        this.type = (byte) code;
         this.data = data;
-        this.dataLength = data.getBytes().length;
+        this.dataLength = data != null ? data.getBytes(StandardCharsets.UTF_8).length : 0;
     }
+
 }

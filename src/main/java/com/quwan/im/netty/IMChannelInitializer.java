@@ -15,6 +15,7 @@ import io.netty.util.CharsetUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.io.PipedReader;
 import java.util.concurrent.TimeUnit;
 
 @Component
@@ -23,7 +24,7 @@ public class IMChannelInitializer extends ChannelInitializer<SocketChannel> {
     // 消息最大长度限制（10MB）
     private static final int MAX_FRAME_LENGTH = 10 * 1024 * 1024;
     // 长度字段偏移量
-    private static final int LENGTH_FIELD_OFFSET = 0;
+    private static final int LENGTH_FIELD_OFFSET = 6;
     // 长度字段占用字节数
     private static final int LENGTH_FIELD_LENGTH = 4;
     // 长度调整值
@@ -36,6 +37,8 @@ public class IMChannelInitializer extends ChannelInitializer<SocketChannel> {
 
     @Autowired
     private IMExceptionHandler exceptionHandler;
+    @Autowired
+    private HeartbeatHandler heartbeatHandler;
 
     /**
      * 初始化通道，配置处理器流水线
@@ -54,12 +57,12 @@ public class IMChannelInitializer extends ChannelInitializer<SocketChannel> {
                 INITIAL_BYTES_TO_STRIP
         ));
 
-        // 长度字段预处理器，在消息前添加长度字段
-        pipeline.addLast("frameEncoder", new LengthFieldPrepender(LENGTH_FIELD_LENGTH));
+//        // 长度字段预处理器，在消息前添加长度字段
+//        pipeline.addLast("frameEncoder", new LengthFieldPrepender(LENGTH_FIELD_LENGTH));
 
         // 2. 字符串编解码器（处理文本消息）
-        pipeline.addLast("stringDecoder", new StringDecoder(CharsetUtil.UTF_8));
-        pipeline.addLast("stringEncoder", new StringEncoder(CharsetUtil.UTF_8));
+//        pipeline.addLast("stringDecoder", new StringDecoder(CharsetUtil.UTF_8));
+//        pipeline.addLast("stringEncoder", new StringEncoder(CharsetUtil.UTF_8));
 
         // 3. 自定义消息编解码器（处理IM消息对象）
         pipeline.addLast("messageDecoder", new MessageDecoder());
@@ -70,11 +73,11 @@ public class IMChannelInitializer extends ChannelInitializer<SocketChannel> {
         // 写空闲时间：0（不检测写空闲）
         // 读写空闲时间：0（不检测读写空闲）
         pipeline.addLast("idleStateHandler", new IdleStateHandler(
-                30, 0, 0, TimeUnit.SECONDS
+                30, 10, 5, TimeUnit.SECONDS
         ));
 
         // 自定义心跳处理器（处理空闲事件）
-        pipeline.addLast("heartbeatHandler", new HeartbeatHandler());
+        pipeline.addLast("heartbeatHandler", heartbeatHandler);
 
         // 5. 业务逻辑处理器
         pipeline.addLast("imMessageHandler", imMessageHandler);

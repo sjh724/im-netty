@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.quwan.im.exception.IMBusinessException;
 import com.quwan.im.exception.IMNettyException;
 import com.quwan.im.model.*;
+import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,6 +23,7 @@ import java.util.concurrent.TimeoutException;
  * 统一捕获和处理系统中所有异常，返回标准化错误响应
  */
 @ControllerAdvice
+@ChannelHandler.Sharable
 public class IMExceptionHandler {
     private static final Logger logger = LoggerFactory.getLogger(IMExceptionHandler.class);
 

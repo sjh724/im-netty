@@ -1,7 +1,6 @@
 package com.quwan.im.netty;
 
-import com.quwan.im.entity.FriendEntity;
-import com.quwan.im.entity.FriendRequestEntity;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.quwan.im.entity.GroupEntity;
 import com.quwan.im.entity.GroupMemberEntity;
 import com.quwan.im.entity.MessageEntity;
@@ -13,8 +12,8 @@ import com.quwan.im.service.FriendService;
 import com.quwan.im.service.GroupService;
 import com.quwan.im.service.MessageService;
 import com.quwan.im.service.UserService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.util.AttributeKey;
@@ -34,8 +33,10 @@ import java.util.stream.Collectors;
  * 每个消息类型都有专门的处理方法，命名和功能完全匹配
  */
 @Component
+@ChannelHandler.Sharable
 public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessage> {
-    private static final Logger logger = LoggerFactory.getLogger(IMMessageHandler.class);
+
+    private static final Logger       logger       = LoggerFactory.getLogger(IMMessageHandler.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     // 用户ID与Channel的映射关系
@@ -61,96 +62,104 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      */
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, ProtocolMessage protocolMessage) throws Exception {
-        String userId = getUserIdFromChannel(ctx.channel());
-        String data = protocolMessage.getData();
 
-        // 根据消息编码获取对应的MessageType
-        MessageType messageType = MessageType.fromCode(protocolMessage.getType());
-        logger.info("用户[{}]接收消息 - 类型: {}({}), 内容: {}",
-                userId, messageType.name(), messageType.getCode(), data);
+        try {
+            String userId = getUserIdFromChannel(ctx.channel());
+            String data = protocolMessage.getData();
 
-        // 严格按照MessageType枚举进行分发
-        switch (messageType) {
-            case LOGIN:
-                handleLogin(ctx, data);
-                break;
-            case LOGOUT:
-                handleLogout(ctx, userId);
-                break;
-            case PING:
-                handlePing(ctx);
-                break;
+            // 根据消息编码获取对应的MessageType
+            MessageType messageType = MessageType.fromCode(protocolMessage.getType());
+            logger.info("用户[{}]接收消息 - 类型: {}({}), 内容: {}", userId, messageType.name(), messageType.getCode(), data);
 
-            // 单聊消息处理
-            case SINGLE_CHAT:
-                handleSingleChat(userId, data);
-                break;
-            case SINGLE_CHAT_ACK:
-                handleSingleChatAck(data);
-                break;
-            case SINGLE_CHAT_READ:
-                handleSingleChatRead(data);
-                break;
-            case SINGLE_CHAT_RECALL:
-                handleSingleChatRecall(userId, data);
-                break;
+            // 严格按照MessageType枚举进行分发
+            switch (messageType) {
+                case LOGIN:
+                    logger.info("login request,data:{}", data);
+                    handleLogin(ctx, data);
+                    break;
+                case LOGOUT:
+                    handleLogout(ctx, userId);
+                    break;
+                case PING:
+                    handlePing(ctx);
+                    break;
 
-            // 群聊消息处理
-            case GROUP_CHAT:
-                handleGroupChat(userId, data);
-                break;
-            case GROUP_CHAT_ACK:
-                handleGroupChatAck(data);
-                break;
-            case GROUP_CHAT_READ:
-                handleGroupChatRead(data);
-                break;
-            case GROUP_CHAT_RECALL:
-                handleGroupChatRecall(userId, data);
-                break;
+                // 单聊消息处理
+                case SINGLE_CHAT:
+                    handleSingleChat(userId, data);
+                    break;
+                case SINGLE_CHAT_ACK:
+                    handleSingleChatAck(data);
+                    break;
+                case SINGLE_CHAT_READ:
+                    handleSingleChatRead(data);
+                    break;
+                case SINGLE_CHAT_RECALL:
+                    handleSingleChatRecall(userId, data);
+                    break;
 
-            // 好友关系处理
-            case FRIEND_REQUEST_SEND:
-                handleFriendRequestSend(userId, data);
-                break;
-            case FRIEND_REQUEST_RESPONSE:
-                handleFriendRequestResponse(userId, data);
-                break;
-            case FRIEND_LIST_QUERY:
-                handleFriendListQuery(userId, ctx);
-                break;
-            case FRIEND_DELETE:
-                handleFriendDelete(userId, data);
-                break;
+                // 群聊消息处理
+                case GROUP_CHAT:
+                    handleGroupChat(userId, data);
+                    break;
+                case GROUP_CHAT_ACK:
+                    handleGroupChatAck(data);
+                    break;
+                case GROUP_CHAT_READ:
+                    handleGroupChatRead(data);
+                    break;
+                case GROUP_CHAT_RECALL:
+                    handleGroupChatRecall(userId, data);
+                    break;
 
-            // 群组管理处理
-            case GROUP_CREATE:
-                handleGroupCreate(userId, data, ctx);
-                break;
-            case GROUP_JOIN:
-                handleGroupJoin(userId, data, ctx);
-                break;
-            case GROUP_QUIT:
-                handleGroupQuit(userId, data, ctx);
-                break;
-            case GROUP_MEMBER_QUERY:
-                handleGroupMemberQuery(data, ctx);
-                break;
-            case GROUP_LIST_QUERY:
-                handleGroupListQuery(userId, ctx);
-                break;
+                // 好友关系处理
+                case FRIEND_REQUEST_SEND:
+                    handleFriendRequestSend(userId, data);
+                    break;
+                case FRIEND_REQUEST_RESPONSE:
+                    handleFriendRequestResponse(userId, data);
+                    break;
+                case FRIEND_LIST_QUERY:
+                    handleFriendListQuery(userId, ctx);
+                    break;
+                case FRIEND_DELETE:
+                    handleFriendDelete(userId, data);
+                    break;
 
-            default:
-                logger.warn("未实现的消息类型: {}", messageType);
-                sendErrorResponse(ctx, "未实现的消息类型: " + messageType.name());
+                // 群组管理处理
+                case GROUP_CREATE:
+                    handleGroupCreate(userId, data, ctx);
+                    break;
+                case GROUP_JOIN:
+                    handleGroupJoin(userId, data, ctx);
+                    break;
+                case GROUP_QUIT:
+                    handleGroupQuit(userId, data, ctx);
+                    break;
+                case GROUP_MEMBER_QUERY:
+                    handleGroupMemberQuery(data, ctx);
+                    break;
+                case GROUP_LIST_QUERY:
+                    handleGroupListQuery(userId, ctx);
+                    break;
+
+                default:
+                    logger.warn("未实现的消息类型: {}", messageType);
+                    sendErrorResponse(ctx, "未实现的消息类型: " + messageType.name());
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            logger.error("message channel read0 error;{}", e.getMessage());
         }
     }
 
     // ------------------------------ 系统基础消息处理 ------------------------------
+
     /**
      * 处理登录请求 (对应MessageType.LOGIN)
      */
     private void handleLogin(ChannelHandlerContext ctx, String data) throws Exception {
+
         Map<String, String> loginData = objectMapper.readValue(data, Map.class);
         String username = loginData.get("username");
         String password = loginData.get("password");
@@ -183,6 +192,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 处理登出请求 (对应MessageType.LOGOUT)
      */
     private void handleLogout(ChannelHandlerContext ctx, String userId) throws Exception {
+
         if (userId != null) {
             userChannelMap.remove(userId);
             userService.updateUserStatus(userId, "OFFLINE");
@@ -196,15 +206,19 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 处理心跳请求 (对应MessageType.PING)
      */
     private void handlePing(ChannelHandlerContext ctx) throws Exception {
+
+        logger.info("handle ping msg, send pong");
         sendResponse(ctx, MessageType.PONG, "success", "pong");
     }
 
 
     // ------------------------------ 单聊消息处理 ------------------------------
+
     /**
      * 处理单聊消息 (对应MessageType.SINGLE_CHAT)
      */
     private void handleSingleChat(String senderId, String data) throws Exception {
+
         IMMessage message = objectMapper.readValue(data, IMMessage.class);
         String receiverId = message.getTo();
 
@@ -231,10 +245,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
         // 转发给接收方
         Channel receiverChannel = userChannelMap.get(receiverId);
         if (receiverChannel != null && receiverChannel.isActive()) {
-            ProtocolMessage protocolMessage = new ProtocolMessage(
-                    MessageType.SINGLE_CHAT.getCode(),
-                    objectMapper.writeValueAsString(message)
-            );
+            ProtocolMessage protocolMessage = new ProtocolMessage(MessageType.SINGLE_CHAT.getCode(), objectMapper.writeValueAsString(message));
             receiverChannel.writeAndFlush(protocolMessage);
             messageService.updateMessageStatus(message.getId(), "DELIVERED");
         }
@@ -247,6 +258,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 处理单聊消息确认 (对应MessageType.SINGLE_CHAT_ACK)
      */
     private void handleSingleChatAck(String data) throws Exception {
+
         Map<String, String> ackData = objectMapper.readValue(data, Map.class);
         String messageId = ackData.get("messageId");
         messageService.updateMessageStatus(messageId, "DELIVERED");
@@ -256,6 +268,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 处理单聊消息已读回执 (对应MessageType.SINGLE_CHAT_READ)
      */
     private void handleSingleChatRead(String data) throws Exception {
+
         Map<String, String> readData = objectMapper.readValue(data, Map.class);
         String messageId = readData.get("messageId");
         messageService.updateMessageStatus(messageId, "READ");
@@ -269,6 +282,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 处理单聊消息撤回 (对应MessageType.SINGLE_CHAT_RECALL)
      */
     private void handleSingleChatRecall(String operatorId, String data) throws Exception {
+
         Map<String, String> recallData = objectMapper.readValue(data, Map.class);
         String messageId = recallData.get("messageId");
         String receiverId = recallData.get("receiverId");
@@ -297,10 +311,12 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
 
 
     // ------------------------------ 群聊消息处理 ------------------------------
+
     /**
      * 处理群聊消息 (对应MessageType.GROUP_CHAT)
      */
     private void handleGroupChat(String senderId, String data) throws Exception {
+
         IMMessage message = objectMapper.readValue(data, IMMessage.class);
         String groupId = message.getGroupId();
 
@@ -325,10 +341,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
             if (!memberId.equals(senderId)) { // 跳过发送者
                 Channel memberChannel = userChannelMap.get(memberId);
                 if (memberChannel != null && memberChannel.isActive()) {
-                    ProtocolMessage protocolMessage = new ProtocolMessage(
-                            MessageType.GROUP_CHAT.getCode(),
-                            objectMapper.writeValueAsString(message)
-                    );
+                    ProtocolMessage protocolMessage = new ProtocolMessage(MessageType.GROUP_CHAT.getCode(), objectMapper.writeValueAsString(message));
                     memberChannel.writeAndFlush(protocolMessage);
                 }
             }
@@ -342,6 +355,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 处理群聊消息确认 (对应MessageType.GROUP_CHAT_ACK)
      */
     private void handleGroupChatAck(String data) throws Exception {
+
         Map<String, String> ackData = objectMapper.readValue(data, Map.class);
         String messageId = ackData.get("messageId");
         messageService.updateMessageStatus(messageId, "DELIVERED");
@@ -351,6 +365,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 处理群聊消息已读回执 (对应MessageType.GROUP_CHAT_READ)
      */
     private void handleGroupChatRead(String data) throws Exception {
+
         Map<String, String> readData = objectMapper.readValue(data, Map.class);
         String messageId = readData.get("messageId");
         messageService.updateMessageStatus(messageId, "READ");
@@ -360,6 +375,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 处理群聊消息撤回 (对应MessageType.GROUP_CHAT_RECALL)
      */
     private void handleGroupChatRecall(String operatorId, String data) throws Exception {
+
         Map<String, String> recallData = objectMapper.readValue(data, Map.class);
         String messageId = recallData.get("messageId");
         String groupId = recallData.get("groupId");
@@ -371,8 +387,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
             return;
         }
 
-        boolean canRecall = message.getFromUser().equals(operatorId) ||
-                groupService.isGroupOwner(groupId, operatorId);
+        boolean canRecall = message.getFromUser().equals(operatorId) || groupService.isGroupOwner(groupId, operatorId);
         if (!canRecall) {
             sendErrorToUser(operatorId, "无权撤回该消息");
             return;
@@ -391,17 +406,18 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
 
         List<GroupMemberEntity> members = groupService.getGroupMembers(groupId);
         for (GroupMemberEntity member : members) {
-            sendToUser(member.getUserId(), MessageType.GROUP_CHAT_RECALL,
-                    objectMapper.writeValueAsString(recallNotify));
+            sendToUser(member.getUserId(), MessageType.GROUP_CHAT_RECALL, objectMapper.writeValueAsString(recallNotify));
         }
     }
 
 
     // ------------------------------ 好友关系处理 ------------------------------
+
     /**
      * 处理发送好友请求 (对应MessageType.FRIEND_REQUEST_SEND)
      */
     private void handleFriendRequestSend(String senderId, String data) throws Exception {
+
         Map<String, String> requestData = objectMapper.readValue(data, Map.class);
         String targetUserId = requestData.get("targetUserId");
         String remark = requestData.getOrDefault("remark", "");
@@ -418,8 +434,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
             notifyMsg.setTo(targetUserId);
             notifyMsg.setContent(sender.getUsername() + "请求添加您为好友：" + remark);
 
-            sendToUser(targetUserId, MessageType.FRIEND_REQUEST_RECV,
-                    objectMapper.writeValueAsString(notifyMsg));
+            sendToUser(targetUserId, MessageType.FRIEND_REQUEST_RECV, objectMapper.writeValueAsString(notifyMsg));
 
             sendResponseToUser(senderId, MessageType.SYSTEM_NOTIFY, "success", "好友请求已发送");
         } else {
@@ -431,6 +446,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 处理好友请求响应 (对应MessageType.FRIEND_REQUEST_RESPONSE)
      */
     private void handleFriendRequestResponse(String userId, String data) throws Exception {
+
         Map<String, Object> responseData = objectMapper.readValue(data, Map.class);
         String requesterId = (String) responseData.get("requesterId");
         boolean accepted = (boolean) responseData.get("accepted");
@@ -441,13 +457,10 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
 
         if (success) {
             // 通知请求发起者
-            String resultMsg = accepted ?
-                    userId + "已接受您的好友请求" :
-                    userId + "已拒绝您的好友请求";
+            String resultMsg = accepted ? userId + "已接受您的好友请求" : userId + "已拒绝您的好友请求";
 
             sendToUser(requesterId, MessageType.FRIEND_REQUEST_RESULT, resultMsg);
-            sendResponseToUser(userId, MessageType.SYSTEM_NOTIFY, "success",
-                    accepted ? "已接受好友请求" : "已拒绝好友请求");
+            sendResponseToUser(userId, MessageType.SYSTEM_NOTIFY, "success", accepted ? "已接受好友请求" : "已拒绝好友请求");
         } else {
             sendErrorToUser(userId, "处理好友请求失败");
         }
@@ -457,20 +470,19 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 处理好友列表查询 (对应MessageType.FRIEND_LIST_QUERY)
      */
     private void handleFriendListQuery(String userId, ChannelHandlerContext ctx) throws Exception {
+
         List<String> friendIds = friendService.getUserFriends(userId);
         // 获取好友详细信息
-        List<UserEntity> friends = friendIds.stream()
-                .map(id -> userService.getById(id))
-                .collect(Collectors.toList());
+        List<UserEntity> friends = friendIds.stream().map(id -> userService.getById(id)).collect(Collectors.toList());
 
-        sendResponse(ctx, MessageType.FRIEND_LIST_RESPONSE, "success",
-                objectMapper.writeValueAsString(friends));
+        sendResponse(ctx, MessageType.FRIEND_LIST_RESPONSE, "success", objectMapper.writeValueAsString(friends));
     }
 
     /**
      * 处理删除好友 (对应MessageType.FRIEND_DELETE)
      */
     private void handleFriendDelete(String userId, String data) throws Exception {
+
         Map<String, String> deleteData = objectMapper.readValue(data, Map.class);
         String friendId = deleteData.get("friendId");
 
@@ -490,10 +502,12 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
 
 
     // ------------------------------ 群组管理处理 ------------------------------
+
     /**
      * 处理创建群组 (对应MessageType.GROUP_CREATE)
      */
     private void handleGroupCreate(String userId, String data, ChannelHandlerContext ctx) throws Exception {
+
         Map<String, String> groupData = objectMapper.readValue(data, Map.class);
         String groupName = groupData.get("groupName");
         String description = groupData.getOrDefault("description", "");
@@ -510,6 +524,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 处理加入群组 (对应MessageType.GROUP_JOIN)
      */
     private void handleGroupJoin(String userId, String data, ChannelHandlerContext ctx) throws Exception {
+
         Map<String, String> joinData = objectMapper.readValue(data, Map.class);
         String groupId = joinData.get("groupId");
         String nickname = joinData.getOrDefault("nickname", userService.getById(userId).getUsername());
@@ -527,6 +542,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 处理退出群组 (对应MessageType.GROUP_QUIT)
      */
     private void handleGroupQuit(String userId, String data, ChannelHandlerContext ctx) throws Exception {
+
         Map<String, String> quitData = objectMapper.readValue(data, Map.class);
         String groupId = quitData.get("groupId");
 
@@ -543,27 +559,28 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 处理群成员查询 (对应MessageType.GROUP_MEMBER_QUERY)
      */
     private void handleGroupMemberQuery(String data, ChannelHandlerContext ctx) throws Exception {
+
         Map<String, String> queryData = objectMapper.readValue(data, Map.class);
         String groupId = queryData.get("groupId");
 
         List<GroupMemberEntity> members = groupService.getGroupMembers(groupId);
-        sendResponse(ctx, MessageType.GROUP_MEMBER_RESPONSE, "success",
-                objectMapper.writeValueAsString(members));
+        sendResponse(ctx, MessageType.GROUP_MEMBER_RESPONSE, "success", objectMapper.writeValueAsString(members));
     }
 
     /**
      * 处理群组列表查询 (对应MessageType.GROUP_LIST_QUERY)
      */
     private void handleGroupListQuery(String userId, ChannelHandlerContext ctx) throws Exception {
+
         List<GroupEntity> groups = groupService.getUserGroups(userId);
-        sendResponse(ctx, MessageType.GROUP_LIST_RESPONSE, "success",
-                objectMapper.writeValueAsString(groups));
+        sendResponse(ctx, MessageType.GROUP_LIST_RESPONSE, "success", objectMapper.writeValueAsString(groups));
     }
 
 
     // ------------------------------ 连接管理与辅助方法 ------------------------------
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
+
         String userId = getUserIdFromChannel(ctx.channel());
         if (userId != null) {
             userChannelMap.remove(userId);
@@ -574,6 +591,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+
         String userId = getUserIdFromChannel(ctx.channel());
         logger.error("用户[{}]消息处理异常", userId, cause);
         try {
@@ -588,21 +606,17 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 推送未读消息给用户
      */
     private void pushUnreadMessages(String userId) throws Exception {
+
         List<MessageEntity> unreadMessages = messageService.getUnreadMessages(userId);
         if (!unreadMessages.isEmpty()) {
             Channel channel = userChannelMap.get(userId);
             if (channel != null && channel.isActive()) {
                 for (MessageEntity msg : unreadMessages) {
                     IMMessage imMsg = convertToIMMessage(msg);
-                    channel.writeAndFlush(new ProtocolMessage(
-                            imMsg.getType().getCode(),
-                            objectMapper.writeValueAsString(imMsg)
-                    ));
+                    channel.writeAndFlush(new ProtocolMessage(imMsg.getType().getCode(), objectMapper.writeValueAsString(imMsg)));
                 }
                 // 批量更新为已读
-                List<String> msgIds = unreadMessages.stream()
-                        .map(MessageEntity::getMessageId)
-                        .collect(Collectors.toList());
+                List<String> msgIds = unreadMessages.stream().map(MessageEntity::getMessageId).collect(Collectors.toList());
                 messageService.batchUpdateMessageStatus(msgIds, "READ");
             }
         }
@@ -612,13 +626,14 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 转换实体类为消息对象
      */
     private IMMessage convertToIMMessage(MessageEntity entity) {
+
         IMMessage message = new IMMessage();
         message.setId(entity.getMessageId());
         message.setFrom(entity.getFromUser());
         message.setTo(entity.getToUser());
         message.setGroupId(entity.getGroupId());
         message.setContent(entity.getContent());
-        message.setType(MessageType.fromCode(Integer.parseInt(entity.getType())));
+        message.setType(MessageType.fromCode(Byte.parseByte(entity.getType())));
         return message;
     }
 
@@ -626,23 +641,22 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 发送响应消息
      */
     private void sendResponse(ChannelHandlerContext ctx, MessageType type, String status, String content) throws Exception {
+
         IMMessage response = new IMMessage();
         response.setId(UUID.randomUUID().toString());
         response.setType(type);
         response.setFrom("system");
         response.setExtra(status);
         response.setContent(content);
-
-        ctx.writeAndFlush(new ProtocolMessage(
-                type.getCode(),
-                objectMapper.writeValueAsString(response)
-        ));
+        logger.info("send response:{}", response);
+        ctx.writeAndFlush(new ProtocolMessage(type.getCode(), objectMapper.writeValueAsString(response)));
     }
 
     /**
      * 向指定用户发送响应
      */
     private void sendResponseToUser(String userId, MessageType type, String status, String content) throws Exception {
+
         Channel channel = userChannelMap.get(userId);
         if (channel != null && channel.isActive()) {
             IMMessage response = new IMMessage();
@@ -652,10 +666,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
             response.setExtra(status);
             response.setContent(content);
 
-            channel.writeAndFlush(new ProtocolMessage(
-                    type.getCode(),
-                    objectMapper.writeValueAsString(response)
-            ));
+            channel.writeAndFlush(new ProtocolMessage(type.getCode(), objectMapper.writeValueAsString(response)));
         }
     }
 
@@ -663,12 +674,10 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 向指定用户发送消息
      */
     private void sendToUser(String userId, MessageType type, String content) throws Exception {
+
         Channel channel = userChannelMap.get(userId);
         if (channel != null && channel.isActive()) {
-            channel.writeAndFlush(new ProtocolMessage(
-                    type.getCode(),
-                    content
-            ));
+            channel.writeAndFlush(new ProtocolMessage(type.getCode(), content));
         }
     }
 
@@ -676,22 +685,21 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 发送系统通知
      */
     private void sendSystemNotify(Channel channel, String content) throws Exception {
+
         IMMessage notify = new IMMessage();
         notify.setId(UUID.randomUUID().toString());
         notify.setType(MessageType.SYSTEM_NOTIFY);
         notify.setFrom("system");
         notify.setContent(content);
 
-        channel.writeAndFlush(new ProtocolMessage(
-                MessageType.SYSTEM_NOTIFY.getCode(),
-                objectMapper.writeValueAsString(notify)
-        ));
+        channel.writeAndFlush(new ProtocolMessage(MessageType.SYSTEM_NOTIFY.getCode(), objectMapper.writeValueAsString(notify)));
     }
 
     /**
      * 向群组发送系统通知
      */
     private void sendGroupSystemNotify(String groupId, String content) throws Exception {
+
         IMMessage notify = new IMMessage();
         notify.setId(UUID.randomUUID().toString());
         notify.setType(MessageType.SYSTEM_NOTIFY);
@@ -705,10 +713,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
         for (GroupMemberEntity member : members) {
             Channel channel = userChannelMap.get(member.getUserId());
             if (channel != null && channel.isActive()) {
-                channel.writeAndFlush(new ProtocolMessage(
-                        MessageType.SYSTEM_NOTIFY.getCode(),
-                        notifyData
-                ));
+                channel.writeAndFlush(new ProtocolMessage(MessageType.SYSTEM_NOTIFY.getCode(), notifyData));
             }
         }
     }
@@ -717,6 +722,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 发送错误响应
      */
     private void sendErrorResponse(ChannelHandlerContext ctx, String errorMsg) throws Exception {
+
         sendResponse(ctx, MessageType.ERROR_RESPONSE, "error", errorMsg);
     }
 
@@ -724,6 +730,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 向指定用户发送错误消息
      */
     private void sendErrorToUser(String userId, String errorMsg) throws Exception {
+
         sendResponseToUser(userId, MessageType.ERROR_RESPONSE, "error", errorMsg);
     }
 
@@ -731,6 +738,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 从Channel获取用户ID
      */
     public static String getUserIdFromChannel(Channel channel) {
+
         return channel.attr(USER_ID_ATTRIBUTE).get();
     }
 
@@ -738,6 +746,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
      * 获取在线用户列表
      */
     public static List<String> getOnlineUsers() {
+
         return userChannelMap.keySet().stream().collect(Collectors.toList());
     }
 }
