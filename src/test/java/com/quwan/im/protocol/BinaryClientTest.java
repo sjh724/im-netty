@@ -121,7 +121,7 @@ public class BinaryClientTest {
     }
 
     private void sendLoginMessage() throws Exception {
-        String loginData = "{\"username\":\"testuser\",\"password\":\"testpass\"}";
+        String loginData = "{\"username\":\"Tom\",\"password\":\"123456\"}";
         ProtocolMessage message = new ProtocolMessage();
         message.setVersion((byte) 1);
         message.setType((byte) 0); // LOGIN
