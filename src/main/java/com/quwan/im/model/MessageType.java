@@ -57,7 +57,7 @@ public enum MessageType {
      * 获取消息类型编码
      * @return 编码值
      */
-    public int getCode() {
+    public byte getCode() {
         return code;
     }
 

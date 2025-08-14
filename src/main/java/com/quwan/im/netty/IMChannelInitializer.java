@@ -1,6 +1,8 @@
 package com.quwan.im.netty;
 
 
+import com.quwan.im.protocol.BinaryMessageDecoder;
+import com.quwan.im.protocol.BinaryMessageEncoder;
 import com.quwan.im.protocol.MessageDecoder;
 import com.quwan.im.protocol.MessageEncoder;
 import io.netty.channel.ChannelInitializer;
@@ -64,9 +66,9 @@ public class IMChannelInitializer extends ChannelInitializer<SocketChannel> {
 //        pipeline.addLast("stringDecoder", new StringDecoder(CharsetUtil.UTF_8));
 //        pipeline.addLast("stringEncoder", new StringEncoder(CharsetUtil.UTF_8));
 
-        // 3. 自定义消息编解码器（处理IM消息对象）
-        pipeline.addLast("messageDecoder", new MessageDecoder());
-        pipeline.addLast("messageEncoder", new MessageEncoder());
+        // 3. 自定义二进制消息编解码器（处理IM消息对象）
+        pipeline.addLast("messageDecoder", new BinaryMessageDecoder());
+        pipeline.addLast("messageEncoder", new BinaryMessageEncoder());
 
         // 4. 心跳检测处理器
         // 读空闲时间：30秒（客户端30秒未发送消息）
