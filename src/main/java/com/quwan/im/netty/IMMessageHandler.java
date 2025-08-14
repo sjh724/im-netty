@@ -61,8 +61,8 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
     @Autowired
     private GroupService groupService;
 
-    @Autowired
-    private RedisTemplate<String, Object> redisTemplate;
+//    @Autowired
+//    private RedisTemplate<String, Object> redisTemplate;
 
     @Autowired
     private Executor messageTaskExecutor;
@@ -195,7 +195,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
         userChannelMap.put(userId, ctx.channel());
 
         // 缓存用户在线状态
-        redisTemplate.opsForValue().set("user:online:" + userId, "1", java.time.Duration.ofMinutes(30));
+//        redisTemplate.opsForValue().set("user:online:" + userId, "1", java.time.Duration.ofMinutes(30));
 
         logger.info("用户[{}]登录成功", userId);
         sendResponse(ctx, MessageType.LOGIN_RESPONSE, "success", userId);
@@ -227,7 +227,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
             });
             
             // 清除缓存
-            redisTemplate.delete("user:online:" + userId);
+//            redisTemplate.delete("user:online:" + userId);
             
             logger.info("用户[{}]主动登出", userId);
             sendResponse(ctx, MessageType.LOGOUT_RESPONSE, "success", "已成功登出");
@@ -710,7 +710,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
             });
             
             // 清除缓存
-            redisTemplate.delete("user:online:" + userId);
+//            redisTemplate.delete("user:online:" + userId);
             
             logger.info("用户[{}]连接断开", userId);
         }
