@@ -125,21 +125,8 @@ public class IMClient {
                         protected void initChannel(SocketChannel ch) {
                             ChannelPipeline pipeline = ch.pipeline();
 
-                            // 1. 粘包拆包处理器（与服务器端完全一致）
-                            pipeline.addLast("frameDecoder", new LengthFieldBasedFrameDecoder(
-                                    10 * 1024 * 1024, // 最大帧长度
-                                    0, // 长度字段偏移量
-                                    4, // 长度字段占用字节数
-                                    0, // 长度调整值
-                                    4  // 跳过的初始字节数
-                            ));
-                            pipeline.addLast("frameEncoder", new LengthFieldPrepender(4));
-
-                            // 2. 字符串编解码器（与服务器端一致）
-                            pipeline.addLast("stringDecoder", new StringDecoder(CharsetUtil.UTF_8));
-                            pipeline.addLast("stringEncoder", new StringEncoder(CharsetUtil.UTF_8));
-
-                            // 3. 自定义消息编解码器
+                            // 1. 自定义消息编解码器（与服务器端完全一致）
+                            // MessageDecoder已经继承了LengthFieldBasedFrameDecoder，不需要额外的粘包拆包处理器
                             pipeline.addLast("messageDecoder", new MessageDecoder());
                             pipeline.addLast("messageEncoder", new MessageEncoder());
 

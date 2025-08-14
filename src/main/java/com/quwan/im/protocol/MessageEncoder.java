@@ -28,9 +28,9 @@ public class MessageEncoder extends MessageToByteEncoder<ProtocolMessage> {
             out.writeByte(version);
             logger.debug("编码版本: {}", version);
 
-            // 3. 写入消息类型（4字节，与int类型匹配）
-            int type = msg.getType();
-            out.writeInt(type);
+            // 3. 写入消息类型（1字节，与byte类型匹配）
+            byte type = msg.getType();
+            out.writeByte(type);
             logger.debug("编码消息类型: {}", type);
 
             // 4. 处理数据并计算长度（避免null）
