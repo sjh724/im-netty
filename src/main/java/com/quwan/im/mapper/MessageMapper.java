@@ -12,5 +12,5 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
     List<MessageEntity> selectUnreadMessages(@Param("userId") String userId);
     int updateStatus(@Param("messageId") String messageId, @Param("status") String status);
 
-    int batchUpdateStatus(@Param("messageId") List<String> messageIds,  @Param("status")String status);
+    int batchUpdateStatus(@Param("messageIds") List<String> messageIds,  @Param("status")String status);
 }
