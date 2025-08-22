@@ -29,8 +29,8 @@ public class ProtocolMessage implements Serializable {
 
     public ProtocolMessage() {}
 
-    public ProtocolMessage(int code, String data) {
-        this.type = (byte) code;
+    public ProtocolMessage(byte type, String data) {
+        this.type = type;
         this.data = data;
         this.dataLength = data != null ? data.getBytes(StandardCharsets.UTF_8).length : 0;
     }

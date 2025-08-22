@@ -11,7 +11,7 @@ public class IMMessage implements Serializable {
     private String from;
     private String to;
     private String content;
-    private MessageType type;
+    private byte type;
     private long timestamp;
     private String groupId; // 群组ID，群消息时使用
     private String extra;   // 额外信息

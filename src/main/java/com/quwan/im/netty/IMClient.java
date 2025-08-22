@@ -258,6 +258,7 @@ public class IMClient {
                     MessageType.SINGLE_CHAT.getCode(),
                     objectMapper.writeValueAsString(message)
             );
+            logger.info("send ProtocolMessage :{}",protocolMsg);
 
             channel.writeAndFlush(protocolMsg).addListener((ChannelFutureListener) f -> {
                 if (!f.isSuccess()) {
@@ -383,8 +384,15 @@ public class IMClient {
                 case LOGIN_RESPONSE:
                     handleLoginResponse(ctx, data);
                     break;
+                // 单聊消息处理
                 case SINGLE_CHAT:
                     handleSingleChat(data);
+                    break;
+                case SINGLE_CHAT_ACK:
+                    handleSingleChatAck(data);
+                    break;
+                case SINGLE_CHAT_READ:
+                    handleSingleChatRead(data);
                     break;
                 case GROUP_CHAT:
                     handleGroupChat(data);
@@ -401,6 +409,13 @@ public class IMClient {
                 default:
                     logger.info("收到未知类型消息：{}，内容：{}", type, data);
             }
+        }
+
+        private void handleSingleChatRead(String data) throws Exception {
+
+            IMMessage message = objectMapper.readValue(data, IMMessage.class);
+            logger.info("\n收到来自[{}]的消息：{}", message.getFrom(), message.getContent());
+
         }
 
         /**
@@ -429,6 +444,14 @@ public class IMClient {
          * 处理单聊消息
          */
         private void handleSingleChat(String data) throws Exception {
+            IMMessage message = objectMapper.readValue(data, IMMessage.class);
+            logger.info("\n收到来自[{}]的消息：{}", message.getFrom(), message.getContent());
+        }
+
+        /**
+         * 处理单聊消息
+         */
+        private void handleSingleChatAck(String data) throws Exception {
             IMMessage message = objectMapper.readValue(data, IMMessage.class);
             logger.info("\n收到来自[{}]的消息：{}", message.getFrom(), message.getContent());
         }
@@ -510,7 +533,7 @@ public class IMClient {
         int port = 8888;
 
         // 登录账号密码（根据实际情况修改）
-        String username = "Jerry";
+        String username = "Tom";
         String password = "123456";
 
         IMClient client = new IMClient(host, port, username, password);

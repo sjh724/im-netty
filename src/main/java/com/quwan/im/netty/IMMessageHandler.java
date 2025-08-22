@@ -270,7 +270,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
         // 完善消息信息
         message.setId(UUID.randomUUID().toString());
         message.setFrom(senderId);
-        message.setType(MessageType.SINGLE_CHAT);
+        message.setType(MessageType.SINGLE_CHAT.getCode());
 
         // 异步保存消息
         dbTaskExecutor.execute(() -> {
@@ -369,7 +369,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
         // 通知接收方消息已撤回
         IMMessage recallNotify = new IMMessage();
         recallNotify.setId(UUID.randomUUID().toString());
-        recallNotify.setType(MessageType.SINGLE_CHAT_RECALL);
+        recallNotify.setType(MessageType.SINGLE_CHAT_RECALL.getCode());
         recallNotify.setFrom(operatorId);
         recallNotify.setTo(receiverId);
         recallNotify.setContent(messageId);
@@ -398,7 +398,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
         // 完善消息信息
         message.setId(UUID.randomUUID().toString());
         message.setFrom(senderId);
-        message.setType(MessageType.GROUP_CHAT);
+        message.setType(MessageType.GROUP_CHAT.getCode());
 
         // 异步保存消息
         dbTaskExecutor.execute(() -> {
@@ -504,7 +504,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
             try {
                 IMMessage recallNotify = new IMMessage();
                 recallNotify.setId(UUID.randomUUID().toString());
-                recallNotify.setType(MessageType.GROUP_CHAT_RECALL);
+                recallNotify.setType(MessageType.GROUP_CHAT_RECALL.getCode());
                 recallNotify.setFrom(operatorId);
                 recallNotify.setGroupId(groupId);
                 recallNotify.setContent(messageId);
@@ -545,7 +545,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
             UserEntity sender = userService.getById(senderId);
             IMMessage notifyMsg = new IMMessage();
             notifyMsg.setId(UUID.randomUUID().toString());
-            notifyMsg.setType(MessageType.FRIEND_REQUEST_RECV);
+            notifyMsg.setType(MessageType.FRIEND_REQUEST_RECV.getCode());
             notifyMsg.setFrom(senderId);
             notifyMsg.setTo(targetUserId);
             notifyMsg.setContent(sender.getUsername() + "请求添加您为好友：" + remark);
@@ -740,7 +740,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
             if (channel != null && channel.isActive()) {
                 for (MessageEntity msg : unreadMessages) {
                     IMMessage imMsg = convertToIMMessage(msg);
-                    channel.writeAndFlush(new ProtocolMessage(imMsg.getType().getCode(), objectMapper.writeValueAsString(imMsg)));
+                    channel.writeAndFlush(new ProtocolMessage(imMsg.getType(), objectMapper.writeValueAsString(imMsg)));
                 }
                 // 批量更新为已读
                 List<String> msgIds = unreadMessages.stream().map(MessageEntity::getMessageId).collect(Collectors.toList());
@@ -760,7 +760,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
         message.setTo(entity.getToUser());
         message.setGroupId(entity.getGroupId());
         message.setContent(entity.getContent());
-        message.setType(MessageType.fromCode(Byte.parseByte(entity.getType())));
+        message.setType(Byte.parseByte(entity.getType()));
         return message;
     }
 
@@ -771,7 +771,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
 
         IMMessage response = new IMMessage();
         response.setId(UUID.randomUUID().toString());
-        response.setType(type);
+        response.setType(type.getCode());
         response.setFrom("system");
         response.setExtra(status);
         response.setContent(content);
@@ -788,7 +788,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
         if (channel != null && channel.isActive()) {
             IMMessage response = new IMMessage();
             response.setId(UUID.randomUUID().toString());
-            response.setType(type);
+            response.setType(type.getCode());
             response.setFrom("system");
             response.setExtra(status);
             response.setContent(content);
@@ -815,7 +815,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
 
         IMMessage notify = new IMMessage();
         notify.setId(UUID.randomUUID().toString());
-        notify.setType(MessageType.SYSTEM_NOTIFY);
+        notify.setType(MessageType.SYSTEM_NOTIFY.getCode());
         notify.setFrom("system");
         notify.setContent(content);
 
@@ -829,7 +829,7 @@ public class IMMessageHandler extends SimpleChannelInboundHandler<ProtocolMessag
 
         IMMessage notify = new IMMessage();
         notify.setId(UUID.randomUUID().toString());
-        notify.setType(MessageType.SYSTEM_NOTIFY);
+        notify.setType(MessageType.SYSTEM_NOTIFY.getCode());
         notify.setFrom("system");
         notify.setGroupId(groupId);
         notify.setContent(content);
