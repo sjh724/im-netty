@@ -134,10 +134,16 @@ public class FriendServiceImpl extends ServiceImpl<FriendMapper, FriendEntity> i
 
     @Override
     public boolean removeUser(String userId, String friendId) {
+        // 双向删除好友关系：user->friend 与 friend->user
+        QueryWrapper<FriendEntity> deleteBothDirections = new QueryWrapper<FriendEntity>()
+                .and(wrapper -> wrapper
+                        .eq("user_id", userId)
+                        .eq("friend_id", friendId))
+                .or(wrapper -> wrapper
+                        .eq("user_id", friendId)
+                        .eq("friend_id", userId));
 
-        QueryWrapper<FriendEntity> queryWrapper = new QueryWrapper<FriendEntity>().eq("user_id", friendId).eq("friend_id", userId);
-
-        return friendMapper.delete(queryWrapper) > 0;
+        return friendMapper.delete(deleteBothDirections) > 0;
     }
 
 
