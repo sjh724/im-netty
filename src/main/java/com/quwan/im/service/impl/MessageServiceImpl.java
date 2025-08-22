@@ -33,7 +33,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
         entity.setFromUser(message.getFrom());
         entity.setToUser(message.getTo());
         entity.setContent(message.getContent());
-        entity.setType(message.getType().name());
+        entity.setType(String.valueOf(message.getType()));
         entity.setGroupId(message.getGroupId());
         entity.setStatus(status);
         entity.setTimestamp(LocalDateTime.now());

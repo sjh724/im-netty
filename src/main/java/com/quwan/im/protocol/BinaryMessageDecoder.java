@@ -158,7 +158,7 @@ public class BinaryMessageDecoder extends LengthFieldBasedFrameDecoder {
 
         // 消息类型（1字节）
         byte messageTypeCode = frame.readByte();
-        imMessage.setType(MessageType.fromCode(messageTypeCode));
+        imMessage.setType(messageTypeCode);
 
         // 消息ID（长度+内容）
         imMessage.setId(readString(frame));

@@ -252,7 +252,7 @@ public class IMClient {
             message.setFrom(userId);
             message.setTo(toUserId);
             message.setContent(content);
-            message.setType(MessageType.SINGLE_CHAT);
+            message.setType(MessageType.SINGLE_CHAT.getCode());
 
             ProtocolMessage protocolMsg = new ProtocolMessage(
                     MessageType.SINGLE_CHAT.getCode(),
@@ -285,7 +285,7 @@ public class IMClient {
             message.setFrom(userId);
             message.setGroupId(groupId);
             message.setContent(content);
-            message.setType(MessageType.GROUP_CHAT);
+            message.setType(MessageType.GROUP_CHAT.getCode());
 
             ProtocolMessage protocolMsg = new ProtocolMessage(
                     MessageType.GROUP_CHAT.getCode(),

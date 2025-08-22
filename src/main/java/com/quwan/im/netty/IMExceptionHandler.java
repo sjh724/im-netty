@@ -123,7 +123,7 @@ public class IMExceptionHandler {
 
                 IMMessage errorMessage = new IMMessage();
                 errorMessage.setId(java.util.UUID.randomUUID().toString());
-                errorMessage.setType(MessageType.ERROR_RESPONSE);
+                errorMessage.setType(MessageType.ERROR_RESPONSE.getCode());
                 errorMessage.setFrom("system");
                 errorMessage.setContent(errorMsg);
                 ProtocolMessage protocolMessage = new ProtocolMessage(

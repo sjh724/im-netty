@@ -92,7 +92,7 @@ public class BinaryMessageEncoder extends MessageToByteEncoder<ProtocolMessage> 
         ByteBuf buf = Unpooled.buffer();
         try {
             // 消息类型（1字节）
-            buf.writeByte(imMessage.getType().getCode());
+            buf.writeByte(imMessage.getType());
             
             // 消息ID（长度+内容）
             writeString(buf, imMessage.getId());
